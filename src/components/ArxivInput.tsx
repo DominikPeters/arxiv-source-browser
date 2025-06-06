@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface ArxivInputProps {
   onSubmit: (url: string) => void
@@ -8,10 +8,19 @@ interface ArxivInputProps {
 export default function ArxivInput({ onSubmit, loading }: ArxivInputProps) {
   const [url, setUrl] = useState('')
 
+  useEffect(() => {
+    const savedUrl = localStorage.getItem('arxiv-last-url')
+    if (savedUrl) {
+      setUrl(savedUrl)
+    }
+  }, [])
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (url.trim()) {
-      onSubmit(url.trim())
+      const trimmedUrl = url.trim()
+      localStorage.setItem('arxiv-last-url', trimmedUrl)
+      onSubmit(trimmedUrl)
     }
   }
 

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type React from 'react'
 import { Tree } from 'react-arborist'
-import { File, Folder, FolderOpen, FileText, Image, BookOpen, FileType } from 'lucide-react'
+import { File, Folder, FolderOpen, FileText, Image, BookOpen, FileType, Download } from 'lucide-react'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
 
@@ -9,6 +9,7 @@ interface FileBrowserProps {
   files: FileEntry[]
   onFileSelect: (file: FileEntry) => void
   selectedFile: FileEntry | null
+  onDownloadZip?: () => void
 }
 
 interface TreeNode {
@@ -19,7 +20,7 @@ interface TreeNode {
   isFolder: boolean
 }
 
-export default function FileBrowser({ files, onFileSelect, selectedFile }: FileBrowserProps) {
+export default function FileBrowser({ files, onFileSelect, selectedFile, onDownloadZip }: FileBrowserProps) {
   const treeData = useMemo(() => {
     const root: TreeNode[] = []
     const folderMap = new Map<string, TreeNode>()
@@ -106,7 +107,7 @@ export default function FileBrowser({ files, onFileSelect, selectedFile }: FileB
       data: TreeNode;
     };
     style: React.CSSProperties;
-    dragHandle: (el: HTMLElement | null) => void;
+    dragHandle?: (el: HTMLDivElement | null) => void;
     tree: {
       isOpen: (id: string) => boolean;
       toggle: (id: string) => void;
@@ -139,7 +140,19 @@ export default function FileBrowser({ files, onFileSelect, selectedFile }: FileB
 
   return (
     <div className="file-browser-container">
-      <h3>Files</h3>
+      <div className="file-browser-header">
+        <h3>Files</h3>
+        {onDownloadZip && (
+          <button 
+            className="download-zip-button" 
+            onClick={onDownloadZip}
+            title="Download entire source as ZIP"
+          >
+            <Download size={16} />
+            ZIP
+          </button>
+        )}
+      </div>
       <div className="file-tree">
         <Tree
           data={treeData}

@@ -15,20 +15,33 @@ ini_set('memory_limit', '256M');
 set_time_limit(120);
 
 /**
- * Extract paper ID from various arXiv URL formats
+ * Extract paper ID from arXiv URL or validate direct ID input
  */
-function extractArxivId($url) {
-    $patterns = [
+function extractArxivId($input) {
+    // First check if input is already a valid arXiv ID
+    $idPatterns = [
+        '/^([0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?)$/',  // New format: 2402.10439 or 2402.10439v1
+        '/^([a-z-]+\/[0-9]{7}(?:v[0-9]+)?)$/',     // Old format: math-ph/0501023 or math-ph/0501023v1
+    ];
+    
+    foreach ($idPatterns as $pattern) {
+        if (preg_match($pattern, $input, $matches)) {
+            return $matches[1];
+        }
+    }
+    
+    // If not a direct ID, try to extract from URL
+    $urlPatterns = [
         '/arxiv\.org\/abs\/([0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?)/',
         '/arxiv\.org\/pdf\/([0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?)/',
         '/arxiv\.org\/html\/([0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?)/',
         '/arxiv\.org\/src\/([0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?)/',
-        // Also handle old format IDs
+        // Also handle old format IDs in URLs
         '/arxiv\.org\/(?:abs|pdf|html|src)\/([a-z-]+\/[0-9]{7}(?:v[0-9]+)?)/',
     ];
     
-    foreach ($patterns as $pattern) {
-        if (preg_match($pattern, $url, $matches)) {
+    foreach ($urlPatterns as $pattern) {
+        if (preg_match($pattern, $input, $matches)) {
             return $matches[1];
         }
     }
@@ -144,6 +157,76 @@ function deleteDirectory($dir) {
 }
 
 /**
+ * Get cache directory path and ensure it exists
+ */
+function getCacheDir() {
+    $cacheDir = __DIR__ . '/cache';
+    if (!is_dir($cacheDir)) {
+        mkdir($cacheDir, 0755, true);
+    }
+    return $cacheDir;
+}
+
+/**
+ * Get cached file path for a given arXiv ID
+ */
+function getCachedFilePath($paperId) {
+    $cacheDir = getCacheDir();
+    $filename = 'arxiv_' . str_replace(['/', '.'], '_', $paperId) . '_source.zip';
+    return $cacheDir . '/' . $filename;
+}
+
+/**
+ * Check if a cached file exists and is valid
+ */
+function isCacheValid($filePath) {
+    return file_exists($filePath) && filesize($filePath) > 0;
+}
+
+/**
+ * Manage cache size by keeping only the 100 most recent files
+ */
+function manageCacheSize() {
+    $cacheDir = getCacheDir();
+    $files = [];
+    
+    // Get all zip files in cache directory with their modification times
+    if ($handle = opendir($cacheDir)) {
+        while (false !== ($entry = readdir($handle))) {
+            if (pathinfo($entry, PATHINFO_EXTENSION) === 'zip') {
+                $filePath = $cacheDir . '/' . $entry;
+                $files[] = [
+                    'path' => $filePath,
+                    'mtime' => filemtime($filePath)
+                ];
+            }
+        }
+        closedir($handle);
+    }
+    
+    // Sort by modification time (newest first)
+    usort($files, function($a, $b) {
+        return $b['mtime'] - $a['mtime'];
+    });
+    
+    // Delete files beyond the 100 most recent
+    if (count($files) > 100) {
+        for ($i = 100; $i < count($files); $i++) {
+            unlink($files[$i]['path']);
+        }
+    }
+}
+
+/**
+ * Cleanup temporary files and directory
+ */
+function cleanupTempFiles($tempDir) {
+    if (is_dir($tempDir)) {
+        deleteDirectory($tempDir);
+    }
+}
+
+/**
  * Serve file for download
  */
 function serveFile($filePath, $filename, $contentType = 'application/zip') {
@@ -163,63 +246,81 @@ function serveFile($filePath, $filename, $contentType = 'application/zip') {
 
 // Main execution
 try {
-    // Get URL parameter
-    $arxivUrl = $_GET['url'] ?? '';
+    // Get URL parameter (can be URL or direct ID)
+    $arxivInput = $_GET['url'] ?? '';
     
-    if (empty($arxivUrl)) {
+    if (empty($arxivInput)) {
         http_response_code(400);
-        die('Error: No arXiv URL provided. Usage: ?url=https://arxiv.org/abs/2402.10439');
+        die('Error: No arXiv URL or ID provided. Usage: ?url=https://arxiv.org/abs/2402.10439 or ?url=2402.10439');
     }
     
     // Extract paper ID
-    $paperId = extractArxivId($arxivUrl);
+    $paperId = extractArxivId($arxivInput);
     if (!$paperId) {
         http_response_code(400);
-        die('Error: Invalid arXiv URL format');
+        die('Error: Invalid arXiv URL or ID format');
     }
     
-    // Create temporary directory for processing
+    // Check if file is already cached
+    $cachedFilePath = getCachedFilePath($paperId);
+    if (isCacheValid($cachedFilePath)) {
+        // Update file modification time to mark as recently accessed
+        touch($cachedFilePath);
+        
+        // Serve cached file
+        $zipFilename = 'arxiv_' . str_replace(['/', '.'], '_', $paperId) . '_source.zip';
+        serveFile($cachedFilePath, $zipFilename);
+    }
+    
+    // File not cached, need to download and process
     $tempDir = __DIR__ . '/temp_' . uniqid();
-    mkdir($tempDir, 0755, true);
     
-    // Construct source URL
-    $sourceUrl = 'https://arxiv.org/src/' . $paperId;
-    $tarFile = $tempDir . '/source.tar.gz';
-    $extractDir = $tempDir . '/extracted';
-    $zipFile = $tempDir . '/arxiv_' . str_replace(['/', '.'], '_', $paperId) . '_source.zip';
-    
-    // Download source file
-    if (!downloadFile($sourceUrl, $tarFile)) {
-        deleteDirectory($tempDir);
-        http_response_code(404);
-        die('Error: Could not download source file from arXiv');
+    try {
+        // Create temporary directory for processing
+        mkdir($tempDir, 0755, true);
+        
+        // Construct source URL
+        $sourceUrl = 'https://arxiv.org/src/' . $paperId;
+        $tarFile = $tempDir . '/source.tar.gz';
+        $extractDir = $tempDir . '/extracted';
+        $tempZipFile = $tempDir . '/arxiv_' . str_replace(['/', '.'], '_', $paperId) . '_source.zip';
+        
+        // Download source file
+        if (!downloadFile($sourceUrl, $tarFile)) {
+            throw new Exception('Could not download source file from arXiv');
+        }
+        
+        // Extract tar.gz
+        if (!extractTarGz($tarFile, $extractDir)) {
+            throw new Exception('Could not extract tar.gz file');
+        }
+        
+        // Create ZIP file in temp location
+        if (!createZipFromDirectory($extractDir, $tempZipFile)) {
+            throw new Exception('Could not create ZIP file');
+        }
+        
+        // Move ZIP file to cache
+        if (!rename($tempZipFile, $cachedFilePath)) {
+            throw new Exception('Could not save file to cache');
+        }
+        
+        // Manage cache size (keep only 100 most recent files)
+        manageCacheSize();
+        
+        // Serve the cached file
+        $zipFilename = 'arxiv_' . str_replace(['/', '.'], '_', $paperId) . '_source.zip';
+        serveFile($cachedFilePath, $zipFilename);
+        
+    } finally {
+        // Always cleanup temporary files
+        cleanupTempFiles($tempDir);
     }
-    
-    // Extract tar.gz
-    if (!extractTarGz($tarFile, $extractDir)) {
-        deleteDirectory($tempDir);
-        http_response_code(500);
-        die('Error: Could not extract tar.gz file');
-    }
-    
-    // Create ZIP file
-    if (!createZipFromDirectory($extractDir, $zipFile)) {
-        deleteDirectory($tempDir);
-        http_response_code(500);
-        die('Error: Could not create ZIP file');
-    }
-    
-    // Serve the ZIP file
-    $zipFilename = 'arxiv_' . str_replace(['/', '.'], '_', $paperId) . '_source.zip';
-    serveFile($zipFile, $zipFilename);
-    
-    // Cleanup (this won't execute due to exit in serveFile, but good practice)
-    deleteDirectory($tempDir);
     
 } catch (Exception $e) {
     // Cleanup on error
-    if (isset($tempDir) && is_dir($tempDir)) {
-        deleteDirectory($tempDir);
+    if (isset($tempDir)) {
+        cleanupTempFiles($tempDir);
     }
     
     http_response_code(500);

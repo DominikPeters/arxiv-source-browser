@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Download } from 'lucide-react'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
 import Prism from 'prismjs'
@@ -67,6 +68,23 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
 
   const fileType = getFileType(file.name)
 
+  const downloadFile = async () => {
+    try {
+      const blob = await file.zipFile.async('blob')
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = file.name
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Error downloading file:', error)
+      alert('Error downloading file')
+    }
+  }
+
   if (loading) {
     return <div className="file-viewer-loading">Loading file content...</div>
   }
@@ -76,6 +94,13 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
       <div className="file-viewer">
         <div className="file-header">
           <h3>{file.name}</h3>
+          <button 
+            className="download-file-button"
+            onClick={downloadFile}
+            title={`Download ${file.name}`}
+          >
+            <Download size={16} />
+          </button>
         </div>
         <div className="file-content image-content">
           {imageUrl && <img src={imageUrl} alt={file.name} />}
@@ -89,6 +114,13 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
       <div className="file-viewer">
         <div className="file-header">
           <h3>{file.name}</h3>
+          <button 
+            className="download-file-button"
+            onClick={downloadFile}
+            title={`Download ${file.name}`}
+          >
+            <Download size={16} />
+          </button>
         </div>
         <div className="file-content">
           <p>PDF preview not available. This is a PDF file from the source package.</p>
@@ -133,8 +165,19 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
   return (
     <div className="file-viewer">
       <div className="file-header">
-        <h3>{file.name}</h3>
-        <span className="file-type">{fileType.toUpperCase()}</span>
+        <div className="file-info">
+          <h3>{file.name}</h3>
+          {fileType !== 'unknown' && (
+            <span className="file-type">{fileType.toUpperCase()}</span>
+          )}
+        </div>
+        <button 
+          className="download-file-button"
+          onClick={downloadFile}
+          title={`Download ${file.name}`}
+        >
+          <Download size={16} />
+        </button>
       </div>
       <div className="file-content">
         {renderWithLineNumbers(content)}
