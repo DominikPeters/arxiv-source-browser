@@ -96,7 +96,7 @@ function App() {
           <div className="file-browser">
             <FileBrowser files={files} onFileSelect={handleFileSelect} selectedFile={selectedFile} onDownloadZip={handleDownloadZip} />
           </div>
-          <div className="file-viewer">
+          <div className="file-viewer-container">
             {selectedFile ? (
               <FileViewer file={selectedFile} wordWrap={wordWrap} />
             ) : (

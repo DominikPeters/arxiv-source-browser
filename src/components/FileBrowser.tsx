@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useEffect, useState } from 'react'
 import type React from 'react'
 import { Tree } from 'react-arborist'
 import { File, Folder, FolderOpen, FileText, Image, BookOpen, FileType, Download } from 'lucide-react'
@@ -21,6 +21,34 @@ interface TreeNode {
 }
 
 export default function FileBrowser({ files, onFileSelect, selectedFile, onDownloadZip }: FileBrowserProps) {
+  const treeContainerRef = useRef<HTMLDivElement>(null)
+  const [treeHeight, setTreeHeight] = useState(400)
+
+  useEffect(() => {
+    const updateHeight = () => {
+      if (treeContainerRef.current) {
+        const rect = treeContainerRef.current.getBoundingClientRect()
+        // Subtract padding (3.2px top + 3.2px bottom = 6.4px total)
+        const availableHeight = Math.floor(rect.height - 6.4)
+        setTreeHeight(Math.max(100, availableHeight))
+      }
+    }
+
+    // Use ResizeObserver for more reliable height detection
+    const resizeObserver = new ResizeObserver(updateHeight)
+    
+    if (treeContainerRef.current) {
+      resizeObserver.observe(treeContainerRef.current)
+    }
+
+    // Initial measurement
+    updateHeight()
+    
+    return () => {
+      resizeObserver.disconnect()
+    }
+  }, [])
+
   const treeData = useMemo(() => {
     const root: TreeNode[] = []
     const folderMap = new Map<string, TreeNode>()
@@ -153,12 +181,12 @@ export default function FileBrowser({ files, onFileSelect, selectedFile, onDownl
           </button>
         )}
       </div>
-      <div className="file-tree">
+      <div className="file-tree" ref={treeContainerRef}>
         <Tree
           data={treeData}
           openByDefault={false}
           width="100%"
-          height={600}
+          height={treeHeight}
           indent={16}
           rowHeight={28}
         >

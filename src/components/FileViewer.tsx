@@ -16,12 +16,47 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [imageUrl, setImageUrl] = useState<string>('')
+  const [pdfUrl, setPdfUrl] = useState<string>('')
 
   useEffect(() => {
     setImageUrl('')
     setContent('')
+    setPdfUrl('')
     
     const loadFileContent = async () => {
+      const fileType = getFileType(file.name)
+      
+      // For non-text files, always load as blob
+      if (fileType === 'image') {
+        setLoading(true)
+        try {
+          const blob = await file.zipFile.async('blob')
+          const url = URL.createObjectURL(blob)
+          setImageUrl(url)
+        } catch (error) {
+          console.error('Error loading image:', error)
+        } finally {
+          setLoading(false)
+        }
+        return
+      }
+      
+      if (fileType === 'pdf') {
+        setLoading(true)
+        try {
+          const blob = await file.zipFile.async('blob')
+          const pdfBlob = new Blob([blob], { type: 'application/pdf' })
+          const url = URL.createObjectURL(pdfBlob)
+          setPdfUrl(url)
+        } catch (error) {
+          console.error('Error loading PDF:', error)
+        } finally {
+          setLoading(false)
+        }
+        return
+      }
+      
+      // For text files, check if content is already cached
       if (file.content !== null) {
         setContent(file.content)
         return
@@ -29,17 +64,9 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
 
       setLoading(true)
       try {
-        const fileType = getFileType(file.name)
-        
-        if (fileType === 'image') {
-          const blob = await file.zipFile.async('blob')
-          const url = URL.createObjectURL(blob)
-          setImageUrl(url)
-        } else {
-          const text = await file.zipFile.async('text')
-          setContent(text)
-          file.content = text
-        }
+        const text = await file.zipFile.async('text')
+        setContent(text)
+        file.content = text
       } catch (error) {
         console.error('Error loading file content:', error)
         setContent('Error loading file content')
@@ -52,6 +79,12 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
 
     return () => {
       setImageUrl(prev => {
+        if (prev) {
+          URL.revokeObjectURL(prev)
+        }
+        return ''
+      })
+      setPdfUrl(prev => {
         if (prev) {
           URL.revokeObjectURL(prev)
         }
@@ -122,8 +155,17 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
             <Download size={16} />
           </button>
         </div>
-        <div className="file-content">
-          <p>PDF preview not available. This is a PDF file from the source package.</p>
+        <div className="file-content pdf-content">
+          {pdfUrl ? (
+            <iframe 
+              src={pdfUrl} 
+              title={file.name}
+              width="100%" 
+              style={{ border: 'none', minHeight: '500px' }}
+            />
+          ) : (
+            <p>Loading PDF...</p>
+          )}
         </div>
       </div>
     )
