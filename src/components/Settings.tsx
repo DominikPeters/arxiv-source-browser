@@ -7,8 +7,14 @@ interface SettingsProps {
 }
 
 export default function Settings({ wordWrap, onWordWrapChange, onClose }: SettingsProps) {
+  const handleOverlayClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose()
+    }
+  }
+
   return (
-    <div className="settings-overlay">
+    <div className="settings-overlay" onClick={handleOverlayClick}>
       <div className="settings-modal">
         <div className="settings-header">
           <h2>Settings</h2>

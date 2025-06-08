@@ -1,24 +1,29 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 interface ArxivInputProps {
   onSubmit: (url: string) => void
   loading: boolean
+  value: string | undefined
+  onChange: (value: string) => void
 }
 
-export default function ArxivInput({ onSubmit, loading }: ArxivInputProps) {
-  const [url, setUrl] = useState('')
+export default function ArxivInput({ onSubmit, loading, value, onChange }: ArxivInputProps) {
+  const hasInitialized = useRef(false)
 
   useEffect(() => {
-    const savedUrl = localStorage.getItem('arxiv-last-url')
-    if (savedUrl) {
-      setUrl(savedUrl)
+    if (!hasInitialized.current) {
+      const savedUrl = localStorage.getItem('arxiv-last-url')
+      if (savedUrl && !value) {
+        onChange(savedUrl)
+      }
+      hasInitialized.current = true
     }
-  }, [])
+  }, [value, onChange])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (url.trim()) {
-      const trimmedUrl = url.trim()
+    if (value?.trim()) {
+      const trimmedUrl = value.trim()
       localStorage.setItem('arxiv-last-url', trimmedUrl)
       onSubmit(trimmedUrl)
     }
@@ -29,13 +34,13 @@ export default function ArxivInput({ onSubmit, loading }: ArxivInputProps) {
       <div className="input-group">
         <input
           type="text"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="Enter arXiv URL or ID (e.g., https://arxiv.org/abs/2402.10439 or 2402.10439)"
+          value={value || ''}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Enter arXiv URL or ID (e.g., https://arxiv.org/abs/1706.03762 or 1706.03762)"
           disabled={loading}
           className="arxiv-url-input"
         />
-        <button type="submit" disabled={loading || !url.trim()} className="submit-button">
+        <button type="submit" disabled={loading || !value?.trim()} className="submit-button">
           {loading ? 'Loading...' : 'Browse Source'}
         </button>
       </div>

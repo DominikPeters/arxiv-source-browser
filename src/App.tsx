@@ -4,7 +4,64 @@ import ArxivInput from './components/ArxivInput'
 import FileBrowser from './components/FileBrowser'
 import FileViewer from './components/FileViewer'
 import Settings from './components/Settings'
+import Toast from './components/Toast'
 import type { FileEntry } from './types'
+
+interface ExamplePaper {
+  id: string
+  title: string
+  authors: string
+}
+
+const EXAMPLE_PAPERS: ExamplePaper[] = [
+  {
+    id: '1706.03762',
+    title: 'Attention Is All You Need',
+    authors: 'Vaswani et al.'
+  },
+  {
+    id: '1406.2661',
+    title: 'Generative Adversarial Networks',
+    authors: 'Goodfellow et al.'
+  },
+  {
+    id: '1312.5602',
+    title: 'Playing Atari with Deep Reinforcement Learning',
+    authors: 'Mnih et al.'
+  }
+]
+
+async function findMainTexFile(files: FileEntry[]): Promise<FileEntry | null> {
+  // Filter .tex files
+  const texFiles = files.filter(file => 
+    file.name.toLowerCase().endsWith('.tex')
+  )
+  
+  // If no .tex files, return null
+  if (texFiles.length === 0) {
+    return null
+  }
+  
+  // If exactly 1 .tex file, return it
+  if (texFiles.length === 1) {
+    return texFiles[0]
+  }
+  
+  // If multiple .tex files, find the one containing \begin{document}
+  for (const file of texFiles) {
+    try {
+      const content = await file.zipFile.async('string')
+      if (content.includes('\\begin{document}')) {
+        return file
+      }
+    } catch (error) {
+      console.error('Error reading file content:', error)
+    }
+  }
+  
+  // If no file contains \begin{document}, return null
+  return null
+}
 
 function App() {
   const [files, setFiles] = useState<FileEntry[]>([])
@@ -13,6 +70,8 @@ function App() {
   const [wordWrap, setWordWrap] = useState(true)
   const [showSettings, setShowSettings] = useState(false)
   const [zipBlob, setZipBlob] = useState<Blob | null>(null)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const [inputValue, setInputValue] = useState('')
 
   const handleArxivSubmit = async (url: string) => {
     setLoading(true)
@@ -40,10 +99,13 @@ function App() {
       })
       
       setFiles(fileEntries)
-      setSelectedFile(null)
+      
+      // Find and select the main .tex file
+      const mainFile = await findMainTexFile(fileEntries)
+      setSelectedFile(mainFile)
     } catch (error) {
       console.error('Error fetching arXiv source:', error)
-      alert('Error fetching arXiv source. Please check the URL and try again.')
+      setToastMessage('Error fetching arXiv source. Please check the URL and try again.')
     } finally {
       setLoading(false)
     }
@@ -66,12 +128,28 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
+  const handleLogoClick = () => {
+    setFiles([])
+    setSelectedFile(null)
+    setZipBlob(null)
+  }
+
+  const handleExampleClick = (paperId: string) => {
+    setInputValue(paperId)
+    handleArxivSubmit(paperId)
+  }
+
   return (
-    <div className="app">
+    <div className={`app ${files.length > 0 ? 'has-files' : ''}`}>
       <header className="app-header">
         <div className="header-content">
-          <h1>arXiv Source Browser</h1>
-          <ArxivInput onSubmit={handleArxivSubmit} loading={loading} />
+          <h1 onClick={handleLogoClick} className="app-logo">arXiv Source Browser</h1>
+          <ArxivInput 
+            onSubmit={handleArxivSubmit} 
+            loading={loading} 
+            value={inputValue}
+            onChange={setInputValue}
+          />
           <button 
             className="settings-button"
             onClick={() => setShowSettings(true)}
@@ -81,12 +159,51 @@ function App() {
           </button>
         </div>
         {files.length === 0 && (
-          <div className="how-to">
-            <p>Enter an arXiv URL or paper ID to browse LaTeX source files. Supports formats like:</p>
-            <ul>
-              <li><strong>URL:</strong> https://arxiv.org/abs/2402.10439</li>
-              <li><strong>Paper ID:</strong> 2402.10439</li>
-            </ul>
+          <div className="start-page">
+            <div className="welcome-section">
+              <h2>Browse arXiv LaTeX Source Files</h2>
+              <p className="description">
+                Explore the LaTeX source code of papers from arXiv. 
+                View, navigate, and download the raw files that researchers use to create their publications.
+              </p>
+            </div>
+            
+            <div className="features-section">
+              <h3>What you can do:</h3>
+              <ul className="features-list">
+                <li>📁 Browse all source files in an interactive file tree</li>
+                <li>📝 View LaTeX files with syntax highlighting</li>
+                <li>🖼️ Preview images and PDFs embedded in papers</li>
+                <li>💾 Download the complete source as a ZIP file</li>
+              </ul>
+            </div>
+            
+            <div className="how-to-section">
+              <h3>How to use:</h3>
+              <p>Enter an arXiv URL or paper ID in the input above. Supported formats:</p>
+              <ul className="format-list">
+                <li><strong>URL:</strong> https://arxiv.org/abs/1706.03762</li>
+                <li><strong>Paper ID:</strong> 1706.03762</li>
+              </ul>
+            </div>
+            
+            <div className="examples-section">
+              <h3>Try these example papers:</h3>
+              <div className="example-papers">
+                {EXAMPLE_PAPERS.map((paper) => (
+                  <button
+                    key={paper.id}
+                    className="example-paper"
+                    onClick={() => handleExampleClick(paper.id)}
+                    disabled={loading}
+                  >
+                    <div className="paper-id">{paper.id}</div>
+                    <div className="paper-title">{paper.title}</div>
+                    <div className="paper-authors">{paper.authors}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </header>
@@ -98,7 +215,7 @@ function App() {
           </div>
           <div className="file-viewer-container">
             {selectedFile ? (
-              <FileViewer file={selectedFile} wordWrap={wordWrap} />
+              <FileViewer file={selectedFile} wordWrap={wordWrap} onError={setToastMessage} />
             ) : (
               <div className="no-file-selected">
                 Select a file to view its contents
@@ -113,6 +230,14 @@ function App() {
           wordWrap={wordWrap}
           onWordWrapChange={setWordWrap}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {toastMessage && (
+        <Toast 
+          message={toastMessage}
+          type="error"
+          onClose={() => setToastMessage(null)}
         />
       )}
     </div>

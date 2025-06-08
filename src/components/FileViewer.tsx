@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Download } from 'lucide-react'
+import { Download, Copy } from 'lucide-react'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
 import Prism from 'prismjs'
@@ -12,9 +12,10 @@ import 'prismjs/plugins/line-numbers/prism-line-numbers.css'
 interface FileViewerProps {
   file: FileEntry
   wordWrap?: boolean
+  onError?: (message: string) => void
 }
 
-export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
+export default function FileViewer({ file, wordWrap = true, onError }: FileViewerProps) {
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [imageUrl, setImageUrl] = useState<string>('')
@@ -99,7 +100,7 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
     if (content && !loading) {
       Prism.highlightAll()
     }
-  }, [content, loading])
+  }, [content, loading, wordWrap])
 
   const fileType = getFileType(file.name)
 
@@ -116,8 +117,69 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
       URL.revokeObjectURL(url)
     } catch (error) {
       console.error('Error downloading file:', error)
-      alert('Error downloading file')
+      onError?.('Error downloading file')
     }
+  }
+
+  const copyToClipboard = async () => {
+    try {
+      const fileType = getFileType(file.name)
+      
+      if (fileType === 'image') {
+        const blob = await file.zipFile.async('blob')
+        const extension = file.name.toLowerCase().split('.').pop()
+        let mimeType
+        
+        // Determine MIME type from file extension
+        switch (extension) {
+          case 'png':
+            mimeType = 'image/png'
+            break
+          case 'jpg':
+          case 'jpeg':
+            mimeType = 'image/jpeg'
+            break
+          case 'gif':
+            mimeType = 'image/gif'
+            break
+          case 'webp':
+            mimeType = 'image/webp'
+            break
+          default:
+            mimeType = 'image/png' // fallback
+        }
+        
+        // Create a new blob with the correct MIME type
+        const typedBlob = new Blob([blob], { type: mimeType })
+        
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            [mimeType]: typedBlob
+          })
+        ])
+        return
+      }
+      
+      if (fileType === 'pdf') {
+        onError?.('Cannot copy PDF files to clipboard')
+        return
+      }
+      
+      let textContent = content
+      if (!textContent && file.content === null) {
+        textContent = await file.zipFile.async('text')
+      }
+      
+      await navigator.clipboard.writeText(textContent)
+    } catch (error) {
+      console.error('Error copying to clipboard:', error)
+      onError?.('Failed to copy to clipboard')
+    }
+  }
+
+  const shouldShowCopyButton = () => {
+    const fileType = getFileType(file.name)
+    return fileType !== 'pdf'
   }
 
   if (loading) {
@@ -129,13 +191,24 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
       <div className="file-viewer">
         <div className="file-header">
           <h3>{file.name}</h3>
-          <button 
-            className="download-file-button"
-            onClick={downloadFile}
-            title={`Download ${file.name}`}
-          >
-            <Download size={16} />
-          </button>
+          <div className="file-actions">
+            {shouldShowCopyButton() && (
+              <button 
+                className="copy-file-button"
+                onClick={copyToClipboard}
+                title="Copy to clipboard"
+              >
+                <Copy size={16} />
+              </button>
+            )}
+            <button 
+              className="download-file-button"
+              onClick={downloadFile}
+              title={`Download ${file.name}`}
+            >
+              <Download size={16} />
+            </button>
+          </div>
         </div>
         <div className="file-content image-content">
           {imageUrl && <img src={imageUrl} alt={file.name} />}
@@ -149,13 +222,24 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
       <div className="file-viewer">
         <div className="file-header">
           <h3>{file.name}</h3>
-          <button 
-            className="download-file-button"
-            onClick={downloadFile}
-            title={`Download ${file.name}`}
-          >
-            <Download size={16} />
-          </button>
+          <div className="file-actions">
+            {shouldShowCopyButton() && (
+              <button 
+                className="copy-file-button"
+                onClick={copyToClipboard}
+                title="Copy to clipboard"
+              >
+                <Copy size={16} />
+              </button>
+            )}
+            <button 
+              className="download-file-button"
+              onClick={downloadFile}
+              title={`Download ${file.name}`}
+            >
+              <Download size={16} />
+            </button>
+          </div>
         </div>
         <div className="file-content pdf-content">
           {pdfUrl ? (
@@ -203,13 +287,24 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
             <span className="file-type">{fileType.toUpperCase()}</span>
           )}
         </div>
-        <button 
-          className="download-file-button"
-          onClick={downloadFile}
-          title={`Download ${file.name}`}
-        >
-          <Download size={16} />
-        </button>
+        <div className="file-actions">
+          {shouldShowCopyButton() && (
+            <button 
+              className="copy-file-button"
+              onClick={copyToClipboard}
+              title="Copy to clipboard"
+            >
+              <Copy size={16} />
+            </button>
+          )}
+          <button 
+            className="download-file-button"
+            onClick={downloadFile}
+            title={`Download ${file.name}`}
+          >
+            <Download size={16} />
+          </button>
+        </div>
       </div>
       <div className="file-content">
         {renderWithLineNumbers(content)}
