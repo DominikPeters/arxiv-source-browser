@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
 import ArxivInput from './components/ArxivInput'
 import FileBrowser from './components/FileBrowser'
@@ -28,6 +28,11 @@ const EXAMPLE_PAPERS: ExamplePaper[] = [
     id: '1312.5602',
     title: 'Playing Atari with Deep Reinforcement Learning',
     authors: 'Mnih et al.'
+  },
+  {
+    id: '2005.14165',
+    title: 'Language Models are Few-Shot Learners',
+    authors: 'Brown et al.'
   }
 ]
 
@@ -73,6 +78,18 @@ function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState('')
   const [fileBrowserCollapsed, setFileBrowserCollapsed] = useState(false)
+
+  // Auto-uncollapse file browser when screen size increases above mobile breakpoint
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth > 768 && fileBrowserCollapsed) {
+        setFileBrowserCollapsed(false)
+      }
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [fileBrowserCollapsed])
 
   const handleArxivSubmit = async (url: string) => {
     setLoading(true)
@@ -187,15 +204,6 @@ function App() {
               </ul>
             </div>
             
-            <div className="how-to-section">
-              <h3>How to use:</h3>
-              <p>Enter an arXiv URL or paper ID in the input above. Supported formats:</p>
-              <ul className="format-list">
-                <li><strong>URL:</strong> https://arxiv.org/abs/1706.03762</li>
-                <li><strong>Paper ID:</strong> 1706.03762</li>
-              </ul>
-            </div>
-            
             <div className="examples-section">
               <h3>Try these example papers:</h3>
               <div className="example-papers">
@@ -212,6 +220,12 @@ function App() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="about-section">
+              <p>This website is maintained by <a href="https://dominik-peters.de">Dominik Peters</a> and is not affiliated with arXiv.org.</p>
+              <p>First published: June 2025. Last updated: June 2025, version 1.</p>
+              <p>Source code is available on <a href="https://github.com/DominikPeters/arxiv-source-browser">GitHub</a> under MIT license. The app was mostly implemented using Claude Code.</p>
             </div>
           </div>
         )}
