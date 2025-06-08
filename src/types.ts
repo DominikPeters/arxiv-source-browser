@@ -15,6 +15,11 @@ export function getFileType(filename: string): FileType {
   switch (ext) {
     case 'tex':
     case 'latex':
+    case 'sty':
+    case 'bbl':
+    case 'cls':
+    case 'dtx':
+    case 'ins':
       return 'tex'
     case 'bib':
       return 'bib'

@@ -245,7 +245,13 @@ function App() {
           </div>
           <div className="file-viewer-container">
             {selectedFile ? (
-              <FileViewer file={selectedFile} wordWrap={wordWrap} onError={setToastMessage} />
+              <FileViewer 
+                file={selectedFile} 
+                wordWrap={wordWrap} 
+                onError={setToastMessage}
+                files={files}
+                onFileSelect={handleFileSelect}
+              />
             ) : (
               <div className="no-file-selected">
                 Select a file to view its contents

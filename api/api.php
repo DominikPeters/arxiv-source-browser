@@ -308,7 +308,7 @@ try {
     
     if (empty($arxivInput)) {
         http_response_code(400);
-        die('Error: No arXiv URL or ID provided. Usage: ?url=https://arxiv.org/abs/2402.10439 or ?url=2402.10439');
+        die('Error: No arXiv URL or ID provided. Usage: ?url=https://arxiv.org/abs/1706.03762 or ?url=1706.03762');
     }
     
     // Extract paper ID

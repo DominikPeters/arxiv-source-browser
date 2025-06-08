@@ -9,13 +9,223 @@ import 'prismjs-bibtex'
 import 'prismjs/plugins/line-numbers/prism-line-numbers.js'
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css'
 
+let latexInputLinkerInstalled = false
+let currentFiles: FileEntry[] = []
+const inputLinkMap: Map<string, FileEntry> = new Map()
+
+function setupLatexInputLinker(files: FileEntry[]) {
+  currentFiles = files
+  inputLinkMap.clear()
+  
+  if (latexInputLinkerInstalled) {
+    return
+  }
+  latexInputLinkerInstalled = true
+  
+  function findFileByPath(inputPath: string, isImage = false): FileEntry | null {
+    let cleanPath = inputPath.trim()
+    
+    // Remove leading ./ if present
+    if (cleanPath.startsWith('./')) {
+      cleanPath = cleanPath.substring(2)
+    }
+    
+    if (isImage) {
+      // For images, try common extensions if no extension is provided
+      const imageExtensions = ['.png', '.jpg', '.jpeg', '.pdf', '.eps', '.svg', '.gif']
+      const hasExtension = imageExtensions.some(ext => cleanPath.toLowerCase().endsWith(ext))
+      
+      const pathsToTry = hasExtension ? [cleanPath] : imageExtensions.map(ext => cleanPath + ext)
+      
+      for (const pathToTry of pathsToTry) {
+        for (const file of currentFiles) {
+          if (file.name === pathToTry || file.path === pathToTry) {
+            return file
+          }
+          
+          const fileName = file.name.split('/').pop() || ''
+          if (fileName === pathToTry) {
+            return file
+          }
+        }
+      }
+    } else {
+      // For .tex files, add .tex extension if missing
+      if (!cleanPath.endsWith('.tex')) {
+        cleanPath += '.tex'
+      }
+      
+      for (const file of currentFiles) {
+        if (file.name === cleanPath || file.path === cleanPath) {
+          return file
+        }
+        
+        const fileName = file.name.split('/').pop() || ''
+        if (fileName === cleanPath) {
+          return file
+        }
+      }
+    }
+    
+    return null
+  }
+
+  Prism.hooks.add('after-tokenize', (env) => {
+    if (env.language !== 'latex') {
+      return
+    }
+    
+    function processTokens(tokens: (string | object)[]): void {
+      for (let i = 0; i < tokens.length - 2; i++) {
+        const token1 = tokens[i]
+        const token2 = tokens[i + 1]
+        
+        // Look for pattern: \input + { + filename + }
+        if (token1 && typeof token1 === 'object' && 'type' in token1 && 'content' in token1 &&
+            token1.type === 'function' && token1.content === '\\input' &&
+            token2 && typeof token2 === 'object' && 'type' in token2 && 'content' in token2 &&
+            token2.type === 'punctuation' && token2.content === '{') {
+          
+          // Find the closing brace and collect content
+          let filename = ''
+          let endIndex = i + 3
+          let foundClosing = false
+          
+          for (let j = i + 2; j < tokens.length; j++) {
+            const token = tokens[j]
+            if (typeof token === 'string') {
+              filename += token
+            } else if (token && typeof token === 'object' && 'content' in token) {
+              const tokenObj = token as { type?: string; content?: string }
+              if (tokenObj.type === 'punctuation' && tokenObj.content === '}') {
+                foundClosing = true
+                endIndex = j
+                break
+              } else {
+                filename += tokenObj.content || ''
+              }
+            }
+          }
+          
+          if (foundClosing) {
+            const linkedFile = findFileByPath(filename)
+            
+            if (linkedFile) {
+              // Store the mapping for later use in wrap hook
+              const content = `\\input{${filename}}`
+              inputLinkMap.set(content, linkedFile)
+              
+              // Replace all tokens from i to endIndex with a single link token
+              const linkToken = new Prism.Token('latex-input-link', content, undefined, content)
+              
+              tokens.splice(i, endIndex - i + 1, linkToken)
+            }
+          }
+        }
+        
+        // Look for pattern: \includegraphics + [optional parameters] + { + filename + }
+        if (token1 && typeof token1 === 'object' && 'type' in token1 && 'content' in token1 &&
+            token1.type === 'function' && token1.content === '\\includegraphics') {
+          
+          // Search for the first '{' token after \includegraphics (skip optional [...] parameters)
+          let openBraceIndex = -1
+          for (let j = i + 1; j < tokens.length; j++) {
+            const token = tokens[j]
+            if (token && typeof token === 'object' && 'type' in token && 'content' in token) {
+              const tokenObj = token as { type?: string; content?: string }
+              if (tokenObj.type === 'punctuation' && tokenObj.content === '{') {
+                openBraceIndex = j
+                break
+              }
+            }
+          }
+          
+          if (openBraceIndex !== -1) {
+            // Find the closing brace and collect content
+            let filename = ''
+            let endIndex = openBraceIndex + 2
+            let foundClosing = false
+            
+            for (let j = openBraceIndex + 1; j < tokens.length; j++) {
+              const token = tokens[j]
+              if (typeof token === 'string') {
+                filename += token
+              } else if (token && typeof token === 'object' && 'content' in token) {
+                const tokenObj = token as { type?: string; content?: string }
+                if (tokenObj.type === 'punctuation' && tokenObj.content === '}') {
+                  foundClosing = true
+                  endIndex = j
+                  break
+                } else {
+                  filename += tokenObj.content || ''
+                }
+              }
+            }
+            
+            if (foundClosing) {
+              const linkedFile = findFileByPath(filename, true)
+              
+              if (linkedFile) {
+                // Store the mapping for later use in wrap hook
+                const content = `\\includegraphics{${filename}}`
+                inputLinkMap.set(content, linkedFile)
+                
+                // Replace all tokens from i to endIndex with a single link token
+                const linkToken = new Prism.Token('latex-graphics-link', content, undefined, content)
+                
+                tokens.splice(i, endIndex - i + 1, linkToken)
+              }
+            }
+          }
+        }
+        
+        // Recursively process nested content
+        if (token1 && typeof token1 === 'object' && 'content' in token1 && 
+            Array.isArray((token1 as { content: unknown }).content)) {
+          processTokens((token1 as { content: (string | object)[] }).content)
+        }
+      }
+    }
+    
+    processTokens(env.tokens)
+  })
+
+  Prism.hooks.add('wrap', (env) => {
+    if (env.type === 'latex-input-link' || env.type === 'latex-graphics-link') {
+      const linkedFile = inputLinkMap.get(env.content)
+      
+      if (linkedFile) {
+        let match, linkType
+        
+        if (env.type === 'latex-input-link') {
+          match = env.content.match(/\\input\{([^}]+)\}/)
+          linkType = 'input'
+        } else {
+          match = env.content.match(/\\includegraphics\{([^}]+)\}/)
+          linkType = 'graphics'
+        }
+        
+        const inputPath = match ? match[1] : 'unknown'
+        
+        env.tag = 'span'
+        env.attributes.class = env.type === 'latex-input-link' ? 'latex-input-link' : 'latex-graphics-link'
+        env.attributes.title = `Click to open: ${inputPath}`
+        env.attributes['data-input-path'] = inputPath
+        env.attributes['data-link-type'] = linkType
+      }
+    }
+  })
+}
+
 interface FileViewerProps {
   file: FileEntry
   wordWrap?: boolean
   onError?: (message: string) => void
+  files?: FileEntry[]
+  onFileSelect?: (file: FileEntry) => void
 }
 
-export default function FileViewer({ file, wordWrap = true, onError }: FileViewerProps) {
+export default function FileViewer({ file, wordWrap = true, onError, files, onFileSelect }: FileViewerProps) {
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [imageUrl, setImageUrl] = useState<string>('')
@@ -25,6 +235,9 @@ export default function FileViewer({ file, wordWrap = true, onError }: FileViewe
     setImageUrl('')
     setContent('')
     setPdfUrl('')
+    
+    // Scroll to top when file changes
+    window.scrollTo(0, 0)
     
     const loadFileContent = async () => {
       const fileType = getFileType(file.name)
@@ -98,9 +311,57 @@ export default function FileViewer({ file, wordWrap = true, onError }: FileViewe
 
   useEffect(() => {
     if (content && !loading) {
+      if (files && onFileSelect) {
+        setupLatexInputLinker(files)
+      }
       Prism.highlightAll()
+      
+      // Add click handler for LaTeX links
+      const handleLatexLinkClick = (event: MouseEvent) => {
+        const target = event.target as HTMLElement
+        if (target.classList.contains('latex-input-link') || target.classList.contains('latex-graphics-link')) {
+          const inputPath = target.getAttribute('data-input-path')
+          const linkType = target.getAttribute('data-link-type')
+          if (inputPath && files && onFileSelect) {
+            const isImage = linkType === 'graphics'
+            const linkedFile = currentFiles.find(file => {
+              if (isImage) {
+                // For images, try multiple extensions
+                const cleanPath = inputPath.startsWith('./') ? inputPath.substring(2) : inputPath
+                const imageExtensions = ['.png', '.jpg', '.jpeg', '.pdf', '.eps', '.svg', '.gif']
+                const hasExtension = imageExtensions.some(ext => cleanPath.toLowerCase().endsWith(ext))
+                
+                if (hasExtension) {
+                  return file.name === cleanPath || file.path === cleanPath || 
+                         (file.name.split('/').pop() || '') === cleanPath
+                } else {
+                  return imageExtensions.some(ext => {
+                    const pathWithExt = cleanPath + ext
+                    return file.name === pathWithExt || file.path === pathWithExt || 
+                           (file.name.split('/').pop() || '') === pathWithExt
+                  })
+                }
+              } else {
+                // For .tex files
+                const cleanPath = inputPath.endsWith('.tex') ? inputPath : inputPath + '.tex'
+                return file.name === cleanPath || file.path === cleanPath || 
+                       (file.name.split('/').pop() || '') === cleanPath
+              }
+            })
+            if (linkedFile) {
+              onFileSelect(linkedFile)
+            }
+          }
+        }
+      }
+      
+      document.addEventListener('click', handleLatexLinkClick)
+      
+      return () => {
+        document.removeEventListener('click', handleLatexLinkClick)
+      }
     }
-  }, [content, loading, wordWrap])
+  }, [content, loading, wordWrap, files, onFileSelect])
 
   const fileType = getFileType(file.name)
 

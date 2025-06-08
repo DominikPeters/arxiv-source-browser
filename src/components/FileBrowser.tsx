@@ -1,6 +1,6 @@
 import { useMemo, useRef, useEffect, useState } from 'react'
 import type React from 'react'
-import { Tree } from 'react-arborist'
+import { Tree, type TreeApi } from 'react-arborist'
 import { File, Folder, FolderOpen, FileText, Image, BookOpen, FileType, Download, ChevronDown, ChevronUp } from 'lucide-react'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
@@ -24,6 +24,7 @@ interface TreeNode {
 
 export default function FileBrowser({ files, onFileSelect, selectedFile, onDownloadZip, isCollapsed = false, onToggleCollapse }: FileBrowserProps) {
   const treeContainerRef = useRef<HTMLDivElement>(null)
+  const treeRef = useRef<TreeApi<TreeNode>>(null)
   const [treeHeight, setTreeHeight] = useState(400)
 
   useEffect(() => {
@@ -108,6 +109,30 @@ export default function FileBrowser({ files, onFileSelect, selectedFile, onDownl
 
     return sortTreeNodes(root)
   }, [files])
+
+  // Effect to expand parent directories and focus selected file
+  useEffect(() => {
+    if (selectedFile && treeRef.current) {
+      const filePath = selectedFile.path
+      const pathParts = filePath.split('/')
+      
+      // First, open all parent directories by their IDs
+      let currentPath = ''
+      for (let i = 0; i < pathParts.length - 1; i++) {
+        currentPath = currentPath ? `${currentPath}/${pathParts[i]}` : pathParts[i]
+        // Open this parent directory
+        treeRef.current.open(currentPath)
+      }
+      
+      // Small delay to allow the tree to update before focusing
+      setTimeout(() => {
+        const node = treeRef.current?.get(filePath)
+        if (node) {
+          node.focus()
+        }
+      }, 10)
+    }
+  }, [selectedFile])
 
   const getFileIcon = (node: TreeNode, isOpen?: boolean) => {
     if (node.isFolder) {
@@ -197,6 +222,7 @@ export default function FileBrowser({ files, onFileSelect, selectedFile, onDownl
       {!isCollapsed && (
         <div className="file-tree" ref={treeContainerRef}>
           <Tree
+            ref={treeRef}
             data={treeData}
             openByDefault={false}
             width="100%"
