@@ -218,11 +218,62 @@ function manageCacheSize() {
 }
 
 /**
+ * Global variable to track temp directories for cleanup
+ */
+$tempDirsToCleanup = [];
+
+/**
+ * Register shutdown function to ensure cleanup happens
+ */
+function registerCleanupHandler() {
+    global $tempDirsToCleanup;
+    register_shutdown_function(function() use (&$tempDirsToCleanup) {
+        foreach ($tempDirsToCleanup as $tempDir) {
+            cleanupTempFiles($tempDir);
+        }
+    });
+}
+
+/**
+ * Add temp directory to cleanup list
+ */
+function addTempDirForCleanup($tempDir) {
+    global $tempDirsToCleanup;
+    $tempDirsToCleanup[] = $tempDir;
+}
+
+/**
  * Cleanup temporary files and directory
  */
 function cleanupTempFiles($tempDir) {
     if (is_dir($tempDir)) {
-        deleteDirectory($tempDir);
+        try {
+            deleteDirectory($tempDir);
+        } catch (Exception $e) {
+            error_log("Failed to cleanup temp directory $tempDir: " . $e->getMessage());
+        }
+    }
+}
+
+/**
+ * Clean up old temporary directories (older than 1 hour)
+ */
+function cleanupOldTempDirs() {
+    $apiDir = __DIR__;
+    $cutoffTime = time() - 3600; // 1 hour ago
+    
+    if ($handle = opendir($apiDir)) {
+        while (false !== ($entry = readdir($handle))) {
+            if (strpos($entry, 'temp_') === 0 && is_dir($apiDir . '/' . $entry)) {
+                $dirPath = $apiDir . '/' . $entry;
+                $dirTime = filemtime($dirPath);
+                
+                if ($dirTime < $cutoffTime) {
+                    cleanupTempFiles($dirPath);
+                }
+            }
+        }
+        closedir($handle);
     }
 }
 
@@ -246,6 +297,12 @@ function serveFile($filePath, $filename, $contentType = 'application/zip') {
 
 // Main execution
 try {
+    // Register cleanup handler to ensure temp files are deleted even on fatal errors
+    registerCleanupHandler();
+    
+    // Clean up old temp directories periodically
+    cleanupOldTempDirs();
+    
     // Get URL parameter (can be URL or direct ID)
     $arxivInput = $_GET['url'] ?? '';
     
@@ -279,6 +336,9 @@ try {
         // Create temporary directory for processing
         mkdir($tempDir, 0755, true);
         
+        // Register this temp directory for cleanup
+        addTempDirForCleanup($tempDir);
+        
         // Construct source URL
         $sourceUrl = 'https://arxiv.org/src/' . $paperId;
         $tarFile = $tempDir . '/source.tar.gz';
@@ -307,6 +367,9 @@ try {
         
         // Manage cache size (keep only 100 most recent files)
         manageCacheSize();
+        
+        // Cleanup temp files before serving (since serveFile calls exit)
+        cleanupTempFiles($tempDir);
         
         // Serve the cached file
         $zipFilename = 'arxiv_' . str_replace(['/', '.'], '_', $paperId) . '_source.zip';
