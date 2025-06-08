@@ -6,6 +6,8 @@ import Prism from 'prismjs'
 import 'prismjs/themes/prism.css'
 import 'prismjs/components/prism-latex'
 import 'prismjs-bibtex'
+import 'prismjs/plugins/line-numbers/prism-line-numbers.js'
+import 'prismjs/plugins/line-numbers/prism-line-numbers.css'
 
 interface FileViewerProps {
   file: FileEntry
@@ -183,24 +185,12 @@ export default function FileViewer({ file, wordWrap = true }: FileViewerProps) {
   }
 
   const renderWithLineNumbers = (content: string) => {
-    const lines = content.split('\n')
     return (
-      <div className={`code-container ${wordWrap ? 'word-wrap' : 'no-wrap'}`}>
-        <div className="line-numbers">
-          {lines.map((_, index) => (
-            <div key={index + 1} className="line-number">
-              {index + 1}
-            </div>
-          ))}
-        </div>
-        <div className="code-content">
-          <pre>
-            <code className={getLanguageClass()}>
-              {content}
-            </code>
-          </pre>
-        </div>
-      </div>
+      <pre className={`line-numbers ${wordWrap ? 'word-wrap' : 'no-wrap'}`} style={wordWrap ? { whiteSpace: 'pre-wrap' } : {}}>
+        <code className={getLanguageClass()}>
+          {content}
+        </code>
+      </pre>
     )
   }
 

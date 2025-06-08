@@ -17,8 +17,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
-  max-width: 1200px;
+  max-width: 1400px;
   margin-left: auto;
   margin-right: auto;
   width: 100%;
@@ -60,7 +59,7 @@
 
 .how-to {
   max-width: 800px;
-  margin: 0 auto 1rem auto;
+  margin: 1.5rem auto 1rem auto;
   width: 100%;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
@@ -93,7 +92,6 @@
 
 .arxiv-input {
   flex: 1;
-  max-width: 600px;
 }
 
 .input-group {
@@ -104,7 +102,7 @@
 
 .arxiv-url-input {
   flex: 1;
-  padding: 0.875rem 1rem;
+  padding: 0.375rem 1rem;
   border: 2px solid var(--border-primary);
   border-radius: 8px;
   font-size: 0.9rem;
@@ -254,7 +252,6 @@
 
 .tree-node:hover {
   background: var(--bg-secondary);
-  transform: translateX(2px);
 }
 
 .tree-node.selected {
@@ -393,106 +390,35 @@
   overflow: auto;
   background: var(--bg-primary);
   min-height: 0;
+  font-size: 0.85rem;
 }
 
-.code-container {
-  display: flex;
-  height: calc(100% - 2rem);
-  max-height: calc(100% - 2rem);
-  background: var(--bg-primary);
+/* Prism line-numbers styles */
+.file-content pre {
+  margin: 0rem !important;
   border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  margin: 1rem;
+  /* border-radius: 6px; */
   box-shadow: var(--shadow-sm);
+  font-family: ui-monospace, 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  line-height: 1.4;
   overflow: auto;
-  align-items: stretch;
+  /* max-height: calc(100% - 2rem); */
 }
 
-.line-numbers {
-  background: var(--bg-tertiary);
-  border-right: 1px solid var(--border-primary);
-  padding: 1rem 0.5rem;
-  font-family: ui-monospace, 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-  font-size: 0.9rem;
-  line-height: 1.4;
-  color: var(--text-muted);
-  text-align: right;
-  user-select: none;
-  min-width: 3rem;
-  font-weight: 500;
-  flex-shrink: 0;
-  align-self: stretch;
-  display: flex;
-  flex-direction: column;
-}
-
-.line-number {
-  height: 1.4em;
-  white-space: nowrap;
-  transition: color 0.05s ease-in-out;
-}
-
-.line-number:hover {
-  color: var(--text-secondary);
-}
-
-.code-content {
-  flex: 1;
-  background: var(--bg-primary);
-  overflow: visible;
-  position: relative;
-}
-
-.code-content pre {
-  margin: 0;
-  padding: 1rem;
-  font-family: ui-monospace, 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-  font-size: 0.9rem;
-  line-height: 1.4;
-  white-space: pre;
-  word-wrap: normal;
-  color: var(--text-primary);
-}
-
-.code-content code {
-  font-family: inherit;
-  white-space: pre;
-  color: inherit;
-}
-
-/* Override Prism.js styles to match our line numbers */
-.code-content pre[class*="language-"] {
-  margin: 0 !important;
-  padding: 1rem !important;
-  font-size: 0.9rem !important;
-  line-height: 1.4 !important;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
-}
-
-.code-content code[class*="language-"] {
-  font-size: inherit !important;
-  line-height: inherit !important;
-  font-family: inherit !important;
-}
-
-/* Word wrap styles */
-.code-container.word-wrap .code-content pre {
+.file-content pre.word-wrap {
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-x: hidden;
 }
 
-.code-container.word-wrap .code-content code {
-  white-space: pre-wrap;
-}
-
-.code-container.no-wrap .code-content pre {
+.file-content pre.no-wrap {
   white-space: pre;
   overflow-x: auto;
 }
 
-.code-container.no-wrap .code-content code {
-  white-space: pre;
+.file-content code {
+  font-family: inherit;
+  color: var(--text-primary);
 }
 
 /* Settings modal styles */
@@ -508,7 +434,7 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: fadeIn 0.2s ease-in-out;
+  animation: fadeIn 0.1s ease-in-out;
 }
 
 @keyframes fadeIn {
@@ -524,7 +450,7 @@
   max-width: 500px;
   width: 90%;
   border: 1px solid var(--border-primary);
-  animation: slideIn 0.3s ease-in-out;
+  animation: slideIn 0.1s ease-in-out;
 }
 
 @keyframes slideIn {
@@ -542,7 +468,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem;
+  padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--border-primary);
   background: var(--bg-secondary);
   border-radius: 12px 12px 0 0;
@@ -574,11 +500,12 @@
 }
 
 .settings-content {
-  padding: 1.5rem;
+  padding: 0.5rem 1rem;
+  padding-bottom: 0;
 }
 
 .setting-item {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .setting-label {
@@ -595,7 +522,8 @@
 }
 
 .setting-checkbox {
-  margin-right: 0.75rem;
+  margin-left: 0;
+  margin-right: 0.475rem;
   width: 1.125rem;
   height: 1.125rem;
   cursor: pointer;
@@ -607,10 +535,10 @@
 }
 
 .setting-description {
-  margin-top: 0.5rem;
+  margin-top: 0.25rem;
   font-size: 0.8rem;
   color: var(--text-muted);
-  margin-left: 1.875rem;
+  margin-left: 1.6rem;
   line-height: 1.4;
 }
 
@@ -767,7 +695,7 @@
     padding: 0.5rem 0.75rem;
   }
   
-  .code-container {
+  .file-content pre {
     margin: 0.75rem;
   }
   
@@ -831,22 +759,8 @@
     font-size: 0.75rem;
   }
   
-  .code-container {
+  .file-content pre {
     margin: 0.5rem;
-  }
-  
-  .line-numbers {
-    padding: 0.5rem 0.375rem;
-    min-width: 2.5rem;
     font-size: 0.75rem;
-  }
-  
-  .code-content pre {
-    padding: 0.5rem;
-    font-size: 0.75rem;
-  }
-  
-  .line-number {
-    height: 1.3em;
   }
 }
