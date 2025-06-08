@@ -41,7 +41,7 @@ export default function ArxivInput({ onSubmit, loading, value, onChange }: Arxiv
           className="arxiv-url-input"
         />
         <button type="submit" disabled={loading || !value?.trim()} className="submit-button">
-          {loading ? 'Loading...' : 'Browse Source'}
+          {loading ? 'Loading...' : 'Open'}
         </button>
       </div>
     </form>

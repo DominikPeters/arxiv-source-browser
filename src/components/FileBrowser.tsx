@@ -1,7 +1,7 @@
 import { useMemo, useRef, useEffect, useState } from 'react'
 import type React from 'react'
 import { Tree } from 'react-arborist'
-import { File, Folder, FolderOpen, FileText, Image, BookOpen, FileType, Download } from 'lucide-react'
+import { File, Folder, FolderOpen, FileText, Image, BookOpen, FileType, Download, ChevronDown, ChevronUp } from 'lucide-react'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
 
@@ -10,6 +10,8 @@ interface FileBrowserProps {
   onFileSelect: (file: FileEntry) => void
   selectedFile: FileEntry | null
   onDownloadZip?: () => void
+  isCollapsed?: boolean
+  onToggleCollapse?: () => void
 }
 
 interface TreeNode {
@@ -20,7 +22,7 @@ interface TreeNode {
   isFolder: boolean
 }
 
-export default function FileBrowser({ files, onFileSelect, selectedFile, onDownloadZip }: FileBrowserProps) {
+export default function FileBrowser({ files, onFileSelect, selectedFile, onDownloadZip, isCollapsed = false, onToggleCollapse }: FileBrowserProps) {
   const treeContainerRef = useRef<HTMLDivElement>(null)
   const [treeHeight, setTreeHeight] = useState(400)
 
@@ -167,9 +169,20 @@ export default function FileBrowser({ files, onFileSelect, selectedFile, onDownl
   }
 
   return (
-    <div className="file-browser-container">
+    <div className={`file-browser-container ${isCollapsed ? 'collapsed' : ''}`}>
       <div className="file-browser-header">
-        <h3>Files</h3>
+        <button 
+          className="files-header-button"
+          onClick={onToggleCollapse}
+          title={isCollapsed ? "Expand file browser" : "Collapse file browser"}
+        >
+          <h3>Files ({files.length})</h3>
+          {onToggleCollapse && (
+            <span className="collapse-icon mobile-only">
+              {isCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+            </span>
+          )}
+        </button>
         {onDownloadZip && (
           <button 
             className="download-zip-button" 
@@ -181,18 +194,20 @@ export default function FileBrowser({ files, onFileSelect, selectedFile, onDownl
           </button>
         )}
       </div>
-      <div className="file-tree" ref={treeContainerRef}>
-        <Tree
-          data={treeData}
-          openByDefault={false}
-          width="100%"
-          height={treeHeight}
-          indent={16}
-          rowHeight={28}
-        >
-          {Node}
-        </Tree>
-      </div>
+      {!isCollapsed && (
+        <div className="file-tree" ref={treeContainerRef}>
+          <Tree
+            data={treeData}
+            openByDefault={false}
+            width="100%"
+            height={treeHeight}
+            indent={16}
+            rowHeight={28}
+          >
+            {Node}
+          </Tree>
+        </div>
+      )}
     </div>
   )
 }

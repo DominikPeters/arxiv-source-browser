@@ -370,7 +370,6 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.75rem;
 }
 
 .file-browser-container h3 {
@@ -381,6 +380,54 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-secondary);
+}
+
+.files-header-button {
+  background: none;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0;
+  transition: opacity 0.1s ease-in-out;
+}
+
+.collapse-icon {
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+}
+
+.mobile-only {
+  display: none;
+}
+
+/* On large screens, disable collapse functionality */
+@media (min-width: 769px) {
+  .files-header-button {
+    cursor: default;
+    pointer-events: none;
+  }
+}
+
+/* On small screens, enable collapse functionality */
+@media (max-width: 768px) {
+  .files-header-button {
+    cursor: pointer;
+    pointer-events: auto;
+  }
+  
+  .files-header-button:hover {
+    opacity: 0.8;
+  }
+  
+  .mobile-only {
+    display: flex;
+  }
+}
+
+.file-browser-container.collapsed .file-tree {
+  display: none;
 }
 
 .download-zip-button {
@@ -415,6 +462,7 @@
   border: 1px solid var(--border-primary);
   padding: 3.2px 6.4px;
   min-height: 0;
+  margin-top: 0.75rem;
 }
 
 /* Override react-arborist inline styles to use available space */
@@ -834,25 +882,36 @@
 
 @media (max-width: 768px) {
   .app-content {
-    grid-template-columns: 240px 1fr;
-    margin: 0.5rem;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    margin: 0;
+    width: 100%;
+  }
+  
+  .file-browser {
+    border-right: none;
+    border-bottom: 1px solid var(--border-primary);
   }
   
   .file-browser-container {
     padding: 0.75rem;
   }
   
+  .file-browser-container.collapsed {
+    padding-bottom: 0.75rem;
+  }
+  
   .file-tree {
     overflow-y: auto;
+    max-height: 300px;
   }
   
   .header-content {
     display: grid;
     grid-template-columns: 1fr auto;
     grid-template-rows: auto auto;
-    gap: 1rem;
+    gap: 0.5rem;
     align-items: center;
-    margin-bottom: 0.75rem;
   }
   
   .app-header h1 {
@@ -863,6 +922,7 @@
   .settings-button {
     grid-column: 2;
     grid-row: 1;
+    padding: 0.15rem 0.75rem;
   }
   
   .arxiv-input {
@@ -872,13 +932,15 @@
   }
   
   .input-group {
-    flex-direction: column;
     gap: 0.5rem;
   }
   
-  .arxiv-url-input,
-  .submit-button {
+  .arxiv-url-input {
     width: 100%;
+  }
+
+  .submit-button {
+    padding: 0.75rem 1rem;
   }
   
   .app-header {
@@ -944,7 +1006,7 @@
 @media (max-width: 480px) {
   .app-content {
     grid-template-columns: 1fr;
-    grid-template-rows: 200px 1fr;
+    grid-template-rows: auto 1fr;
   }
   
   .file-browser {
@@ -954,6 +1016,10 @@
   
   .file-browser-container {
     padding: 0.5rem;
+  }
+  
+  .file-browser-container.collapsed {
+    padding-bottom: 0.5rem;
   }
   
   .file-tree {

@@ -72,6 +72,7 @@ function App() {
   const [zipBlob, setZipBlob] = useState<Blob | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState('')
+  const [fileBrowserCollapsed, setFileBrowserCollapsed] = useState(false)
 
   const handleArxivSubmit = async (url: string) => {
     setLoading(true)
@@ -113,6 +114,14 @@ function App() {
 
   const handleFileSelect = (file: FileEntry) => {
     setSelectedFile(file)
+    // Auto-collapse on small screens when a file is selected
+    if (window.innerWidth <= 768) {
+      setFileBrowserCollapsed(true)
+    }
+  }
+
+  const handleToggleFileBrowser = () => {
+    setFileBrowserCollapsed(!fileBrowserCollapsed)
   }
 
   const handleDownloadZip = () => {
@@ -211,7 +220,14 @@ function App() {
       {files.length > 0 && (
         <div className="app-content">
           <div className="file-browser">
-            <FileBrowser files={files} onFileSelect={handleFileSelect} selectedFile={selectedFile} onDownloadZip={handleDownloadZip} />
+            <FileBrowser 
+              files={files} 
+              onFileSelect={handleFileSelect} 
+              selectedFile={selectedFile} 
+              onDownloadZip={handleDownloadZip}
+              isCollapsed={fileBrowserCollapsed}
+              onToggleCollapse={handleToggleFileBrowser}
+            />
           </div>
           <div className="file-viewer-container">
             {selectedFile ? (
