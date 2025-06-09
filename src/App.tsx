@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import ArxivInput from './components/ArxivInput'
-import FileBrowser from './components/FileBrowser'
+import FileBrowser, { type FileBrowserRef } from './components/FileBrowser'
 import FileViewer from './components/FileViewer'
 import Settings from './components/Settings'
 import Toast from './components/Toast'
@@ -81,6 +81,7 @@ function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [paperId, setPaperId] = useState('')
   const [fileBrowserCollapsed, setFileBrowserCollapsed] = useState(false)
+  const fileBrowserRef = useRef<FileBrowserRef>(null)
 
   // Auto-uncollapse file browser when screen size increases above mobile breakpoint
   useEffect(() => {
@@ -93,6 +94,32 @@ function App() {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [fileBrowserCollapsed])
+
+  // Keyboard shortcuts for search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only trigger search if we have files (not on start page)
+      if (files.length === 0) return
+      
+      // Check for Cmd/Ctrl+K or forward slash
+      const isSearchShortcut = (e.metaKey || e.ctrlKey) && e.key === 'k'
+      const isSlashShortcut = e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey
+      
+      if (isSearchShortcut || isSlashShortcut) {
+        // Don't trigger if user is typing in an input/textarea
+        const activeElement = document.activeElement as HTMLElement
+        if (activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA') {
+          return
+        }
+        
+        e.preventDefault()
+        fileBrowserRef.current?.openSearch()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [files.length])
 
   // Handle initial URL loading on mount
   useEffect(() => {
@@ -314,6 +341,7 @@ function App() {
         <div className="app-content">
           <div className="file-browser">
             <FileBrowser 
+              ref={fileBrowserRef}
               files={files} 
               onFileSelect={handleFileSelect} 
               selectedFile={selectedFile} 

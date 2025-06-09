@@ -52,8 +52,9 @@ The Vite dev server is configured to proxy `/api` requests to `localhost:8000`.
 
 - **Components**:
   - `ArxivInput`: Handles URL/ID input and submission
-  - `FileBrowser`: Displays file tree with icons and auto-expansion
+  - `FileBrowser`: Displays file tree with icons, auto-expansion, and full-text search functionality
   - `FileViewer`: Renders file content with syntax highlighting, LaTeX link detection, file downloads, and copy-to-clipboard functionality
+  - `Search`: Modal component providing full-text search across files and filenames
 - **Types**: TypeScript interfaces in `src/types.ts`
 - **Styling**: CSS modules with responsive design
 - **Dependencies**: JSZip for ZIP handling, Prism.js for syntax highlighting
@@ -148,3 +149,43 @@ The app includes `.htaccess` file in `/public/` for URL rewriting:
 3. Copy `dist/` contents to web server
 4. Ensure `.htaccess` is included for Apache servers
 5. For other servers, configure URL rewriting to serve `index.html` for non-file requests
+
+## Full-Text Search
+
+The application includes a powerful full-text search feature for quickly finding files and content:
+
+### Search Access
+- **Keyboard shortcuts**: `Cmd/Ctrl+K` or `/` to open search modal
+- **Search button**: Click the search icon next to the ZIP download button in the file browser
+- **Auto-focus**: Search input is automatically focused when modal opens
+
+### Search Capabilities
+- **Filename search**: Searches through all file paths and names (higher priority)
+- **Content search**: Full-text search through LaTeX (.tex), bibliography (.bib), and text files
+- **Lazy indexing**: Search index is built only when first accessed (not on page load)
+- **Smart highlighting**: Search terms highlighted in filenames and content snippets
+
+### Query Syntax
+- **Simple terms**: `latex document` - finds files containing both "latex" AND "document"
+- **Quoted phrases**: `"begin document"` - finds exact phrase "begin document"
+- **Mixed queries**: `begin "to learn"` - finds "begin" AND exact phrase "to learn"
+- **Complex combinations**: `attention "neural network" transformer` - individual words + exact phrases
+
+### Navigation
+- **Keyboard navigation**: Use ↑/↓ arrow keys to navigate through results
+- **Visual selection**: Currently selected result is highlighted with blue gradient
+- **Quick selection**: Press `Enter` to open highlighted result, `Esc` to close modal
+- **Click selection**: Click any result to open the file
+
+### Search Implementation
+- **Technology**: Native JavaScript search (replaced Fuse.js for better full-text performance)
+- **Performance**: Results limited to 50 items, content indexing only for text-based files
+- **File types**: Searches content in .tex, .bib, .txt, .md files; searches filenames for all files
+- **Result prioritization**: Filename matches appear before content matches
+- **Path display**: Smart truncation with ellipsis for long paths while preserving filenames
+
+### Search Component Architecture
+- **Modal overlay**: Full-screen search interface with backdrop blur
+- **Real-time results**: Updates as user types with debounced search
+- **Context snippets**: Shows 80 characters around matches with highlighted search terms
+- **Match indicators**: Clear visual distinction between filename and content matches

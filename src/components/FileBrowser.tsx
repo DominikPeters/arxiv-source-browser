@@ -1,9 +1,10 @@
-import { useMemo, useRef, useEffect, useState } from 'react'
+import { useMemo, useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react'
 import type React from 'react'
 import { Tree, type TreeApi } from 'react-arborist'
-import { File, Folder, FolderOpen, FileText, Image, BookOpen, FileType, Download, ChevronDown, ChevronUp } from 'lucide-react'
+import { File, Folder, FolderOpen, FileText, Image, BookOpen, FileType, Download, ChevronDown, ChevronUp, Search } from 'lucide-react'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
+import SearchComponent from './Search'
 
 interface FileBrowserProps {
   files: FileEntry[]
@@ -14,6 +15,10 @@ interface FileBrowserProps {
   onToggleCollapse?: () => void
 }
 
+export interface FileBrowserRef {
+  openSearch: () => void
+}
+
 interface TreeNode {
   id: string
   name: string
@@ -22,10 +27,15 @@ interface TreeNode {
   isFolder: boolean
 }
 
-export default function FileBrowser({ files, onFileSelect, selectedFile, onDownloadZip, isCollapsed = false, onToggleCollapse }: FileBrowserProps) {
+const FileBrowser = forwardRef<FileBrowserRef, FileBrowserProps>(({ files, onFileSelect, selectedFile, onDownloadZip, isCollapsed = false, onToggleCollapse }, ref) => {
   const treeContainerRef = useRef<HTMLDivElement>(null)
   const treeRef = useRef<TreeApi<TreeNode>>(null)
   const [treeHeight, setTreeHeight] = useState(400)
+  const [showSearch, setShowSearch] = useState(false)
+
+  useImperativeHandle(ref, () => ({
+    openSearch: () => setShowSearch(true)
+  }))
 
   useEffect(() => {
     const updateHeight = () => {
@@ -208,16 +218,25 @@ export default function FileBrowser({ files, onFileSelect, selectedFile, onDownl
             </span>
           )}
         </button>
-        {onDownloadZip && (
+        <div className="file-browser-actions">
           <button 
-            className="download-zip-button" 
-            onClick={onDownloadZip}
-            title="Download entire source as ZIP"
+            className="search-button" 
+            onClick={() => setShowSearch(true)}
+            title="Search files and content"
           >
-            <Download size={16} />
-            ZIP
+            <Search size={16} />
           </button>
-        )}
+          {onDownloadZip && (
+            <button 
+              className="download-zip-button" 
+              onClick={onDownloadZip}
+              title="Download entire source as ZIP"
+            >
+              <Download size={16} />
+              ZIP
+            </button>
+          )}
+        </div>
       </div>
       {!isCollapsed && (
         <div className="file-tree" ref={treeContainerRef}>
@@ -234,6 +253,17 @@ export default function FileBrowser({ files, onFileSelect, selectedFile, onDownl
           </Tree>
         </div>
       )}
+      {showSearch && (
+        <SearchComponent
+          files={files}
+          onFileSelect={onFileSelect}
+          onClose={() => setShowSearch(false)}
+        />
+      )}
     </div>
   )
-}
+})
+
+FileBrowser.displayName = 'FileBrowser'
+
+export default FileBrowser
