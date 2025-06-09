@@ -6,6 +6,8 @@ import FileViewer from './components/FileViewer'
 import Settings from './components/Settings'
 import Toast from './components/Toast'
 import type { FileEntry } from './types'
+import { parseURL, buildURL, extractArxivId } from './types'
+import { API_BASE_URL, BASE_URL } from './config'
 
 interface ExamplePaper {
   id: string
@@ -76,7 +78,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [zipBlob, setZipBlob] = useState<Blob | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
-  const [inputValue, setInputValue] = useState('')
+  const [paperId, setPaperId] = useState('')
   const [fileBrowserCollapsed, setFileBrowserCollapsed] = useState(false)
 
   // Auto-uncollapse file browser when screen size increases above mobile breakpoint
@@ -91,10 +93,60 @@ function App() {
     return () => window.removeEventListener('resize', handleResize)
   }, [fileBrowserCollapsed])
 
+  // Handle initial URL loading on mount
+  useEffect(() => {
+    const urlState = parseURL(window.location.pathname)
+    if (urlState.arxivId) {
+      handleArxivSubmit(urlState.arxivId)
+    }
+  }, []) // Empty dependency array for initial load only
+
+  // Handle browser navigation (back/forward)
+  useEffect(() => {
+    const handlePopState = () => {
+      const urlState = parseURL(window.location.pathname)
+      if (urlState.arxivId && urlState.arxivId !== paperId) {
+        // Load new paper
+        setPaperId(urlState.arxivId)
+        handleArxivSubmit(urlState.arxivId)
+      } else if (!urlState.arxivId && paperId) {
+        // Navigate back to home
+        handleLogoClick()
+      } else if (urlState.arxivId === paperId && files.length > 0) {
+        // Same paper, different file
+        const targetFile = files.find(f => f.path === urlState.filePath)
+        if (targetFile) {
+          setSelectedFile(targetFile)
+        }
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, []) // Remove paperId dependency to prevent triggering on initial load
+
+  // Handle file selection from URL after files are loaded
+  useEffect(() => {
+    if (files.length > 0 && paperId) {
+      const urlState = parseURL(window.location.pathname)
+      if (urlState.filePath && urlState.arxivId === paperId) {
+        const targetFile = files.find(f => f.path === urlState.filePath)
+        if (targetFile && targetFile !== selectedFile) {
+          setSelectedFile(targetFile)
+        }
+      }
+    }
+  }, [files, paperId, selectedFile])
+
   const handleArxivSubmit = async (url: string) => {
     setLoading(true)
     try {
-      const response = await fetch(`./api/api.php?url=${encodeURIComponent(url)}`)
+      const arxivId = extractArxivId(url)
+      if (!arxivId) {
+        throw new Error('Invalid arXiv URL or ID')
+      }
+
+      const response = await fetch(`${API_BASE_URL}api/api.php?url=${encodeURIComponent(url)}`)
       if (!response.ok) {
         throw new Error('Failed to fetch arXiv source')
       }
@@ -117,10 +169,27 @@ function App() {
       })
       
       setFiles(fileEntries)
+      setPaperId(arxivId)
       
-      // Find and select the main .tex file
-      const mainFile = await findMainTexFile(fileEntries)
-      setSelectedFile(mainFile)
+      // Check if we should select a specific file from URL
+      const currentUrlState = parseURL(window.location.pathname)
+      let selectedFile: FileEntry | null = null
+      
+      if (currentUrlState.filePath && currentUrlState.arxivId === arxivId) {
+        // Try to find the specific file from URL
+        selectedFile = fileEntries.find(f => f.path === currentUrlState.filePath) || null
+      }
+      
+      // If no specific file found, find and select the main .tex file
+      if (!selectedFile) {
+        selectedFile = await findMainTexFile(fileEntries)
+      }
+      
+      setSelectedFile(selectedFile)
+      
+      // Update URL - push new state to history
+      const newURL = buildURL(arxivId, selectedFile?.path)
+      window.history.pushState(null, '', newURL)
     } catch (error) {
       console.error('Error fetching arXiv source:', error)
       setToastMessage('Error fetching arXiv source. Please check the URL and try again.')
@@ -131,6 +200,13 @@ function App() {
 
   const handleFileSelect = (file: FileEntry) => {
     setSelectedFile(file)
+    
+    // Update URL with file path (cosmetic update after interface change)
+    if (paperId) {
+      const newURL = buildURL(paperId, file.path)
+      window.history.pushState(null, '', newURL)
+    }
+    
     // Auto-collapse on small screens when a file is selected
     if (window.innerWidth <= 768) {
       setFileBrowserCollapsed(true)
@@ -158,11 +234,13 @@ function App() {
     setFiles([])
     setSelectedFile(null)
     setZipBlob(null)
+    setPaperId('')
+    window.history.pushState(null, '', BASE_URL)
   }
 
-  const handleExampleClick = (paperId: string) => {
-    setInputValue(paperId)
-    handleArxivSubmit(paperId)
+  const handleExampleClick = (examplePaperId: string) => {
+    setPaperId(examplePaperId)
+    handleArxivSubmit(examplePaperId)
   }
 
   return (
@@ -173,8 +251,8 @@ function App() {
           <ArxivInput 
             onSubmit={handleArxivSubmit} 
             loading={loading} 
-            value={inputValue}
-            onChange={setInputValue}
+            value={paperId}
+            onChange={setPaperId}
           />
           <button 
             className="settings-button"

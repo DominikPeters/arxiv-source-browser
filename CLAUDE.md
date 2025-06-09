@@ -92,3 +92,59 @@ The FileBrowser automatically expands parent directories when files are selected
 - Manually opens parent directories using `treeRef.current.open()`
 - Uses setTimeout to allow tree re-render before focusing
 - Focuses selected file using `node.focus()`
+
+## URL Routing
+
+The app implements client-side routing with browser history support:
+
+### URL Format
+- **Home**: `/`
+- **Paper**: `/abs/[arxiv-id]` (loads paper and selects main .tex file)
+- **Specific file**: `/abs/[arxiv-id]/[file-path]` (loads paper and selects specific file)
+
+### Examples
+- `/abs/1706.03762` - Loads paper 1706.03762 and shows main .tex file
+- `/abs/1706.03762/ms.tex` - Loads paper and shows ms.tex file
+- `/abs/1706.03762/figures/attention.png` - Loads paper and shows attention.png
+
+### Implementation Details
+- **URL parsing**: `parseURL()` in `src/types.ts` extracts arXiv ID and file path
+- **URL building**: `buildURL()` constructs URLs from arXiv ID and optional file path
+- **File path handling**: Preserves directory structure with forward slashes (not URL encoded)
+- **Browser history**: Back/forward buttons work correctly, URLs update after interface changes
+- **Initial load**: App reads URL on startup and loads appropriate paper/file
+- **Fallback behavior**: If specified file doesn't exist, falls back to main .tex file
+
+### URL State Management
+- Interface updates happen first, then URL is updated (prevents sluggishness)
+- API calls only occur when loading new papers, not on file navigation
+- Browser navigation events handled via `popstate` listener
+
+## Base URL Configuration
+
+The app supports deployment in subdirectories via environment variable:
+
+### Environment Variables
+- `VITE_BASE_URL`: Set the base path for the application (default: `/`)
+
+### Examples
+```bash
+# Deploy to subdirectory
+VITE_BASE_URL=/myapp/ npm run build
+
+# Deploy to root (default)
+npm run build
+```
+
+### Apache Configuration
+The app includes `.htaccess` file in `/public/` for URL rewriting:
+- Redirects all requests to `index.html` (except API calls and static files)
+- Enables client-side routing on Apache servers
+- Includes optional caching and compression optimizations
+
+### Production Deployment
+1. Set `VITE_BASE_URL` if deploying to subdirectory
+2. Build the app: `npm run build`
+3. Copy `dist/` contents to web server
+4. Ensure `.htaccess` is included for Apache servers
+5. For other servers, configure URL rewriting to serve `index.html` for non-file requests
