@@ -58,7 +58,7 @@ function downloadFile($url, $destination) {
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (compatible; arXiv-Downloader/1.0)');
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (compatible; arxiv-source-browser.github.io)');
     
     $data = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
