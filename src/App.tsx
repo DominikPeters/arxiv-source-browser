@@ -75,6 +75,7 @@ function App() {
   const [files, setFiles] = useState<FileEntry[]>([])
   const [selectedFile, setSelectedFile] = useState<FileEntry | null>(null)
   const [loading, setLoading] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [wordWrap, setWordWrap] = useState(true)
   const [showSettings, setShowSettings] = useState(false)
   const [zipBlob, setZipBlob] = useState<Blob | null>(null)
@@ -126,6 +127,9 @@ function App() {
     const urlState = parseURL(window.location.pathname)
     if (urlState.arxivId) {
       handleArxivSubmit(urlState.arxivId)
+    } else {
+      // No deep URL, show start page immediately
+      setInitialLoading(false)
     }
   }, []) // Empty dependency array for initial load only
 
@@ -141,9 +145,9 @@ function App() {
         // Navigate back to home
         handleLogoClick()
       } else if (urlState.arxivId === paperId && files.length > 0) {
-        // Same paper, different file
+        // Same paper, different file - just update selected file without API call
         const targetFile = files.find(f => f.path === urlState.filePath)
-        if (targetFile) {
+        if (targetFile && targetFile !== selectedFile) {
           setSelectedFile(targetFile)
         }
       }
@@ -151,7 +155,7 @@ function App() {
 
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, []) // Remove paperId dependency to prevent triggering on initial load
+  }, [paperId, files, selectedFile]) // Add dependencies to access current state
 
   // Handle file selection from URL after files are loaded
   useEffect(() => {
@@ -223,6 +227,7 @@ function App() {
       setToastMessage('Error fetching arXiv source. Please check the URL and try again.')
     } finally {
       setLoading(false)
+      setInitialLoading(false)
     }
   }
 
@@ -263,6 +268,7 @@ function App() {
     setSelectedFile(null)
     setZipBlob(null)
     setPaperId('')
+    setInitialLoading(false)
     window.history.pushState(null, '', BASE_URL)
   }
 
@@ -290,7 +296,17 @@ function App() {
             <SettingsIcon size={20} />
           </button>
         </div>
-        {files.length === 0 && (
+        {initialLoading && (
+          <div className="start-page">
+            <div className="welcome-section">
+              <h2>Loading arXiv paper...</h2>
+              <p className="description">
+                Please wait while we fetch and process the source files.
+              </p>
+            </div>
+          </div>
+        )}
+        {files.length === 0 && !initialLoading && (
           <div className="start-page">
             <div className="welcome-section">
               <h2>Browse arXiv LaTeX Source Files</h2>

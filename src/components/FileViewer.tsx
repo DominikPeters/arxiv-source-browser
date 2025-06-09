@@ -9,6 +9,11 @@ import 'prismjs-bibtex'
 import 'prismjs/plugins/line-numbers/prism-line-numbers.js'
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css'
 
+// Ensure Prism is available globally for plugins
+if (typeof window !== 'undefined') {
+  (window as any).Prism = Prism;
+}
+
 let latexInputLinkerInstalled = false
 let currentFiles: FileEntry[] = []
 const inputLinkMap: Map<string, FileEntry> = new Map()

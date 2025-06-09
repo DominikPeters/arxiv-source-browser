@@ -47,8 +47,17 @@ export interface URLState {
 }
 
 export function parseURL(pathname: string): URLState {
+  // Remove base URL prefix if present
+  let cleanPath = pathname
+  if (BASE_URL !== '/') {
+    const basePrefix = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL
+    if (cleanPath.startsWith(basePrefix)) {
+      cleanPath = cleanPath.substring(basePrefix.length)
+    }
+  }
+  
   // Expected format: /abs/[arxiv-id]/[file-path]
-  const match = pathname.match(/^\/abs\/([^/]+)(?:\/(.*))?$/)
+  const match = cleanPath.match(/^\/abs\/([^/]+)(?:\/(.*))?$/)
   
   if (!match) {
     return { arxivId: null, filePath: null }

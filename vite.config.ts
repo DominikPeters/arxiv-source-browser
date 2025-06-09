@@ -10,7 +10,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'],
-          prism: ['prismjs', 'prismjs-bibtex'],
           utils: ['jszip', 'lucide-react', 'react-arborist']
         }
       }
