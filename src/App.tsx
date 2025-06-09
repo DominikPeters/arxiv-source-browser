@@ -8,6 +8,7 @@ import Toast from './components/Toast'
 import type { FileEntry } from './types'
 import { parseURL, buildURL, extractArxivId } from './types'
 import { API_BASE_URL, BASE_URL } from './config'
+import { Settings as SettingsIcon } from 'lucide-react'
 
 interface ExamplePaper {
   id: string
@@ -259,7 +260,7 @@ function App() {
             onClick={() => setShowSettings(true)}
             title="Settings"
           >
-            ⚙️
+            <SettingsIcon size={20} />
           </button>
         </div>
         {files.length === 0 && (

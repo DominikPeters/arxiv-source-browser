@@ -6,9 +6,9 @@
  * converts from tar.gz to zip, and serves it to the user.
  */
 
-// Error reporting for debugging (remove in production)
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+// Error reporting disabled for production security
+error_reporting(0);
+ini_set('display_errors', 0);
 
 // Set memory and time limits for handling large files
 ini_set('memory_limit', '256M');
@@ -90,12 +90,7 @@ function extractTarGz($tarFile, $extractDir) {
         $phar->extractTo($extractDir);
         return true;
     } catch (Exception $e) {
-        // Fallback to system tar command if available
-        if (function_exists('exec')) {
-            $command = "tar -xzf " . escapeshellarg($tarFile) . " -C " . escapeshellarg($extractDir);
-            exec($command, $output, $returnVar);
-            return $returnVar === 0;
-        }
+        // No shell fallback for security - rely only on PharData
         return false;
     }
 }
