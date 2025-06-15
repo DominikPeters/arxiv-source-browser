@@ -1,0 +1,25 @@
+# CORS Headers for GitHub Pages deployment
+Header always set Access-Control-Allow-Origin "https://dominik-peters.github.io"
+Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
+Header always set Access-Control-Allow-Headers "Content-Type, Authorization"
+Header always set Access-Control-Max-Age "86400"
+
+# Handle preflight OPTIONS requests
+RewriteEngine On
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^(.*)$ $1 [R=200,L]
+
+# Optional: Add cache headers for better performance
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType application/zip "access plus 1 hour"
+</IfModule>
+
+# Optional: Compression for better performance
+<IfModule mod_deflate.c>
+    SetOutputFilter DEFLATE
+    SetEnvIfNoCase Request_URI \
+        \.(?:gif|jpe?g|png|zip)$ no-gzip dont-vary
+    SetEnvIfNoCase Request_URI \
+        \.(?:exe|t?gz|zip|bz2|sit|rar)$ no-gzip dont-vary
+</IfModule>
