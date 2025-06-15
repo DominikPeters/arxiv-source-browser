@@ -43,7 +43,7 @@
 
 .app-logo {
   cursor: pointer;
-  transition: all 0.1s ease-in-out;
+  transition: all 0.05s ease-in-out;
   user-select: none;
 }
 
@@ -110,6 +110,17 @@
   line-height: 1.6;
   max-width: 600px;
   margin: 0 auto;
+}
+
+.loading-spinner {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.spinner {
+  color: var(--primary-color);
+  animation: spin 1s linear infinite;
 }
 
 .features-section,
@@ -199,7 +210,7 @@
   border-radius: 6px;
   padding: 0.75rem;
   cursor: pointer;
-  transition: all 0.1s ease-in-out;
+  transition: all 0.05s ease-in-out;
   text-align: left;
   display: flex;
   flex-direction: column;
@@ -351,7 +362,7 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0;
-  transition: opacity 0.1s ease-in-out;
+  transition: opacity 0.05s ease-in-out;
 }
 
 .collapse-icon {
@@ -618,6 +629,25 @@
   box-shadow: var(--shadow-md);
 }
 
+.copy-file-button.success {
+  background: #10b981;
+  border-color: #10b981;
+  color: white;
+  animation: successPulse 0.3s ease-out;
+}
+
+@keyframes successPulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 .file-actions {
   display: flex;
   gap: 0.5rem;
@@ -688,7 +718,7 @@
   max-width: 500px;
   width: 90%;
   border: 1px solid var(--border-primary);
-  animation: slideIn 0.1s ease-in-out;
+  animation: fadeIn 0.1s ease-in-out;
 }
 
 @keyframes slideIn {
@@ -725,7 +755,7 @@
   cursor: pointer;
   padding: 0.5rem;
   border-radius: 6px;
-  transition: all 0.1s ease-in-out;
+  transition: all 0.05s ease-in-out;
   display: flex;
   align-items: center;
   color: var(--text-secondary);
@@ -1124,7 +1154,7 @@
   max-width: 400px;
   border-radius: 8px;
   box-shadow: var(--shadow-lg);
-  animation: slideIn 0.3s ease-out;
+  animation: slideIn 0.2s ease-out;
 }
 
 .toast-error {
@@ -1205,7 +1235,7 @@
   width: 90%;
   max-height: 80vh;
   border: 1px solid var(--border-primary);
-  animation: slideIn 0.1s ease-in-out;
+  animation: fadeIn 0.2s ease-in-out;
   display: flex;
   flex-direction: column;
 }
@@ -1261,7 +1291,7 @@
   cursor: pointer;
   padding: 0.5rem;
   border-radius: 6px;
-  transition: all 0.1s ease-in-out;
+  transition: all 0.05s ease-in-out;
   display: flex;
   align-items: center;
   color: var(--text-secondary);
@@ -1402,7 +1432,7 @@
   cursor: pointer !important;
   color: #0066cc !important;
   text-decoration: underline !important;
-  transition: all 0.2s ease-in-out !important;
+  transition: all 0.05s ease-in-out !important;
 }
 
 .latex-input-link:hover,

@@ -7,8 +7,8 @@ import Settings from './components/Settings'
 import Toast from './components/Toast'
 import type { FileEntry } from './types'
 import { parseURL, buildURL, extractArxivId } from './types'
-import { API_BASE_URL, BASE_URL } from './config'
-import { Settings as SettingsIcon } from 'lucide-react'
+import { BASE_URL, API_URL } from './config'
+import { Settings as SettingsIcon, Loader2 } from 'lucide-react'
 
 interface ExamplePaper {
   id: string
@@ -170,6 +170,20 @@ function App() {
     }
   }, [files, paperId, selectedFile])
 
+  // Update document title based on current state
+  useEffect(() => {
+    if (paperId && selectedFile) {
+      // Deep page with specific file
+      document.title = `${selectedFile.name} - arXiv ${paperId} - arXiv Source Browser`
+    } else if (paperId) {
+      // Paper page without specific file
+      document.title = `arXiv ${paperId} - arXiv Source Browser`
+    } else {
+      // Home page
+      document.title = 'arXiv Source Browser'
+    }
+  }, [paperId, selectedFile])
+
   const handleArxivSubmit = async (url: string) => {
     setLoading(true)
     try {
@@ -178,7 +192,7 @@ function App() {
         throw new Error('Invalid arXiv URL or ID')
       }
 
-      const response = await fetch(`${API_BASE_URL}api/api.php?url=${encodeURIComponent(url)}`)
+      const response = await fetch(`${API_URL}?url=${encodeURIComponent(url)}`)
       if (!response.ok) {
         throw new Error('Failed to fetch arXiv source')
       }
@@ -299,6 +313,9 @@ function App() {
         {initialLoading && (
           <div className="start-page">
             <div className="welcome-section">
+              <div className="loading-spinner">
+                <Loader2 size={32} className="spinner" />
+              </div>
               <h2>Loading arXiv paper...</h2>
               <p className="description">
                 Please wait while we fetch and process the source files.

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Download, Copy } from 'lucide-react'
+import { Download, Copy, Check } from 'lucide-react'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
 import Prism from 'prismjs'
@@ -235,6 +235,7 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
   const [loading, setLoading] = useState(false)
   const [imageUrl, setImageUrl] = useState<string>('')
   const [pdfUrl, setPdfUrl] = useState<string>('')
+  const [copySuccess, setCopySuccess] = useState(false)
 
   useEffect(() => {
     setImageUrl('')
@@ -368,6 +369,15 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
     }
   }, [content, loading, wordWrap, files, onFileSelect])
 
+  useEffect(() => {
+    if (copySuccess) {
+      const timer = setTimeout(() => {
+        setCopySuccess(false)
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [copySuccess])
+
   const fileType = getFileType(file.name)
 
   const downloadFile = async () => {
@@ -423,6 +433,7 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
             [mimeType]: typedBlob
           })
         ])
+        setCopySuccess(true)
         return
       }
       
@@ -437,6 +448,7 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
       }
       
       await navigator.clipboard.writeText(textContent)
+      setCopySuccess(true)
     } catch (error) {
       console.error('Error copying to clipboard:', error)
       onError?.('Failed to copy to clipboard')
@@ -460,11 +472,11 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
           <div className="file-actions">
             {shouldShowCopyButton() && (
               <button 
-                className="copy-file-button"
+                className={`copy-file-button ${copySuccess ? 'success' : ''}`}
                 onClick={copyToClipboard}
-                title="Copy to clipboard"
+                title={copySuccess ? 'Copied!' : 'Copy to clipboard'}
               >
-                <Copy size={16} />
+                {copySuccess ? <Check size={16} /> : <Copy size={16} />}
               </button>
             )}
             <button 
@@ -491,11 +503,11 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
           <div className="file-actions">
             {shouldShowCopyButton() && (
               <button 
-                className="copy-file-button"
+                className={`copy-file-button ${copySuccess ? 'success' : ''}`}
                 onClick={copyToClipboard}
-                title="Copy to clipboard"
+                title={copySuccess ? 'Copied!' : 'Copy to clipboard'}
               >
-                <Copy size={16} />
+                {copySuccess ? <Check size={16} /> : <Copy size={16} />}
               </button>
             )}
             <button 
@@ -556,11 +568,11 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
         <div className="file-actions">
           {shouldShowCopyButton() && (
             <button 
-              className="copy-file-button"
+              className={`copy-file-button ${copySuccess ? 'success' : ''}`}
               onClick={copyToClipboard}
-              title="Copy to clipboard"
+              title={copySuccess ? 'Copied!' : 'Copy to clipboard'}
             >
-              <Copy size={16} />
+              {copySuccess ? <Check size={16} /> : <Copy size={16} />}
             </button>
           )}
           <button 
