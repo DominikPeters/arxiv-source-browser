@@ -9,6 +9,12 @@ import 'prismjs-bibtex'
 import 'prismjs/plugins/line-numbers/prism-line-numbers.js'
 import 'prismjs/plugins/line-numbers/prism-line-numbers.css'
 
+// Override the default LaTeX comment rule so that the percent sign macro (\%)
+// isn't treated as the start of a comment.
+Prism.languages.latex.comment = {
+  pattern: /(?<!\\)%.*$/m,
+}
+
 // Ensure Prism is available globally for plugins
 if (typeof window !== 'undefined') {
   (window as any).Prism = Prism;
