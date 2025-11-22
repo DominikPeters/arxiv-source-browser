@@ -29,6 +29,10 @@ export default function ArxivInput({ onSubmit, loading, value, onChange }: Arxiv
     }
   }
 
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    e.target.select()
+  }
+
   return (
     <form onSubmit={handleSubmit} className="arxiv-input">
       <div className="input-group">
@@ -36,6 +40,7 @@ export default function ArxivInput({ onSubmit, loading, value, onChange }: Arxiv
           type="text"
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
+          onFocus={handleFocus}
           placeholder="Enter arXiv URL or ID (e.g., https://arxiv.org/abs/1706.03762 or 1706.03762)"
           disabled={loading}
           className="arxiv-url-input"
