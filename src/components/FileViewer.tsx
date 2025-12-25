@@ -23,37 +23,66 @@ if (typeof window !== 'undefined') {
 let latexInputLinkerInstalled = false
 let currentFiles: FileEntry[] = []
 const inputLinkMap: Map<string, FileEntry> = new Map()
+const refLinkMap: Map<string, { command: string; label: string }> = new Map()
+
+async function findLabelInFiles(label: string): Promise<{ file: FileEntry; lineNumber: number } | null> {
+  // Search through all .tex files for \label{labelname}
+  const labelPattern = new RegExp(`\\\\label\\{${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}`)
+
+  for (const file of currentFiles) {
+    const fileName = file.name.toLowerCase()
+    // Only search in .tex files
+    if (!fileName.endsWith('.tex')) {
+      continue
+    }
+
+    try {
+      const content = file.content !== null ? file.content : await file.zipFile.async('text')
+      const lines = content.split('\n')
+
+      for (let i = 0; i < lines.length; i++) {
+        if (labelPattern.test(lines[i])) {
+          return { file, lineNumber: i }
+        }
+      }
+    } catch (error) {
+      console.error(`Error searching file ${file.name}:`, error)
+    }
+  }
+
+  return null
+}
 
 function setupLatexInputLinker(files: FileEntry[]) {
   currentFiles = files
   inputLinkMap.clear()
-  
+
   if (latexInputLinkerInstalled) {
     return
   }
   latexInputLinkerInstalled = true
-  
+
   function findFileByPath(inputPath: string, isImage = false): FileEntry | null {
     let cleanPath = inputPath.trim()
-    
+
     // Remove leading ./ if present
     if (cleanPath.startsWith('./')) {
       cleanPath = cleanPath.substring(2)
     }
-    
+
     if (isImage) {
       // For images, try common extensions if no extension is provided
       const imageExtensions = ['.png', '.jpg', '.jpeg', '.pdf', '.eps', '.svg', '.gif']
       const hasExtension = imageExtensions.some(ext => cleanPath.toLowerCase().endsWith(ext))
-      
+
       const pathsToTry = hasExtension ? [cleanPath] : imageExtensions.map(ext => cleanPath + ext)
-      
+
       for (const pathToTry of pathsToTry) {
         for (const file of currentFiles) {
           if (file.name === pathToTry || file.path === pathToTry) {
             return file
           }
-          
+
           const fileName = file.name.split('/').pop() || ''
           if (fileName === pathToTry) {
             return file
@@ -65,19 +94,19 @@ function setupLatexInputLinker(files: FileEntry[]) {
       if (!cleanPath.endsWith('.tex')) {
         cleanPath += '.tex'
       }
-      
+
       for (const file of currentFiles) {
         if (file.name === cleanPath || file.path === cleanPath) {
           return file
         }
-        
+
         const fileName = file.name.split('/').pop() || ''
         if (fileName === cleanPath) {
           return file
         }
       }
     }
-    
+
     return null
   }
 
@@ -85,23 +114,23 @@ function setupLatexInputLinker(files: FileEntry[]) {
     if (env.language !== 'latex') {
       return
     }
-    
+
     function processTokens(tokens: (string | object)[]): void {
       for (let i = 0; i < tokens.length - 2; i++) {
         const token1 = tokens[i]
         const token2 = tokens[i + 1]
-        
+
         // Look for pattern: \input + { + filename + }
         if (token1 && typeof token1 === 'object' && 'type' in token1 && 'content' in token1 &&
             token1.type === 'function' && token1.content === '\\input' &&
             token2 && typeof token2 === 'object' && 'type' in token2 && 'content' in token2 &&
             token2.type === 'punctuation' && token2.content === '{') {
-          
+
           // Find the closing brace and collect content
           let filename = ''
           let endIndex = i + 3
           let foundClosing = false
-          
+
           for (let j = i + 2; j < tokens.length; j++) {
             const token = tokens[j]
             if (typeof token === 'string') {
@@ -117,27 +146,27 @@ function setupLatexInputLinker(files: FileEntry[]) {
               }
             }
           }
-          
+
           if (foundClosing) {
             const linkedFile = findFileByPath(filename)
-            
+
             if (linkedFile) {
               // Store the mapping for later use in wrap hook
               const content = `\\input{${filename}}`
               inputLinkMap.set(content, linkedFile)
-              
+
               // Replace all tokens from i to endIndex with a single link token
               const linkToken = new Prism.Token('latex-input-link', content, undefined, content)
-              
+
               tokens.splice(i, endIndex - i + 1, linkToken)
             }
           }
         }
-        
+
         // Look for pattern: \includegraphics + [optional parameters] + { + filename + }
         if (token1 && typeof token1 === 'object' && 'type' in token1 && 'content' in token1 &&
             token1.type === 'function' && token1.content === '\\includegraphics') {
-          
+
           // Search for the first '{' token after \includegraphics (skip optional [...] parameters)
           let openBraceIndex = -1
           for (let j = i + 1; j < tokens.length; j++) {
@@ -150,13 +179,13 @@ function setupLatexInputLinker(files: FileEntry[]) {
               }
             }
           }
-          
+
           if (openBraceIndex !== -1) {
             // Find the closing brace and collect content
             let filename = ''
             let endIndex = openBraceIndex + 2
             let foundClosing = false
-            
+
             for (let j = openBraceIndex + 1; j < tokens.length; j++) {
               const token = tokens[j]
               if (typeof token === 'string') {
@@ -172,42 +201,84 @@ function setupLatexInputLinker(files: FileEntry[]) {
                 }
               }
             }
-            
+
             if (foundClosing) {
               const linkedFile = findFileByPath(filename, true)
-              
+
               if (linkedFile) {
                 // Store the mapping for later use in wrap hook
                 const content = `\\includegraphics{${filename}}`
                 inputLinkMap.set(content, linkedFile)
-                
+
                 // Replace all tokens from i to endIndex with a single link token
                 const linkToken = new Prism.Token('latex-graphics-link', content, undefined, content)
-                
+
                 tokens.splice(i, endIndex - i + 1, linkToken)
               }
             }
           }
         }
-        
+
+        // Look for reference commands: \ref, \Cref, \cref, \eqref, \pageref, \autoref
+        const refCommands = ['\\ref', '\\Cref', '\\cref', '\\eqref', '\\pageref', '\\autoref']
+        if (token1 && typeof token1 === 'object' && 'type' in token1 && 'content' in token1 &&
+            token1.type === 'function' && refCommands.includes((token1 as any).content) &&
+            token2 && typeof token2 === 'object' && 'type' in token2 && 'content' in token2 &&
+            token2.type === 'punctuation' && token2.content === '{') {
+
+          const command = (token1 as any).content
+
+          // Find the closing brace and collect label
+          let label = ''
+          let endIndex = i + 3
+          let foundClosing = false
+
+          for (let j = i + 2; j < tokens.length; j++) {
+            const token = tokens[j]
+            if (typeof token === 'string') {
+              label += token
+            } else if (token && typeof token === 'object' && 'content' in token) {
+              const tokenObj = token as { type?: string; content?: string }
+              if (tokenObj.type === 'punctuation' && tokenObj.content === '}') {
+                foundClosing = true
+                endIndex = j
+                break
+              } else {
+                label += tokenObj.content || ''
+              }
+            }
+          }
+
+          if (foundClosing && label.trim()) {
+            // Store the mapping for later use in wrap hook
+            const content = `${command}{${label}}`
+            refLinkMap.set(content, { command, label: label.trim() })
+
+            // Replace all tokens from i to endIndex with a single link token
+            const linkToken = new Prism.Token('latex-ref-link', content, undefined, content)
+
+            tokens.splice(i, endIndex - i + 1, linkToken)
+          }
+        }
+
         // Recursively process nested content
-        if (token1 && typeof token1 === 'object' && 'content' in token1 && 
+        if (token1 && typeof token1 === 'object' && 'content' in token1 &&
             Array.isArray((token1 as { content: unknown }).content)) {
           processTokens((token1 as { content: (string | object)[] }).content)
         }
       }
     }
-    
+
     processTokens(env.tokens)
   })
 
   Prism.hooks.add('wrap', (env) => {
     if (env.type === 'latex-input-link' || env.type === 'latex-graphics-link') {
       const linkedFile = inputLinkMap.get(env.content)
-      
+
       if (linkedFile) {
         let match, linkType
-        
+
         if (env.type === 'latex-input-link') {
           match = env.content.match(/\\input\{([^}]+)\}/)
           linkType = 'input'
@@ -215,14 +286,27 @@ function setupLatexInputLinker(files: FileEntry[]) {
           match = env.content.match(/\\includegraphics\{([^}]+)\}/)
           linkType = 'graphics'
         }
-        
+
         const inputPath = match ? match[1] : 'unknown'
-        
+
         env.tag = 'span'
         env.attributes.class = env.type === 'latex-input-link' ? 'latex-input-link' : 'latex-graphics-link'
         env.attributes.title = `Click to open: ${inputPath}`
         env.attributes['data-input-path'] = inputPath
         env.attributes['data-link-type'] = linkType
+      }
+    } else if (env.type === 'latex-ref-link') {
+      const refInfo = refLinkMap.get(env.content)
+
+      if (refInfo) {
+        const match = env.content.match(/\\(\w+)\{([^}]+)\}/)
+        const label = match ? match[2] : 'unknown'
+
+        env.tag = 'span'
+        env.attributes.class = 'latex-ref-link'
+        env.attributes.title = `Click to go to: ${label}`
+        env.attributes['data-label'] = label
+        env.attributes['data-ref-type'] = refInfo.command
       }
     }
   })
@@ -329,8 +413,9 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
       Prism.highlightAll()
       
       // Add click handler for LaTeX links
-      const handleLatexLinkClick = (event: MouseEvent) => {
+      const handleLatexLinkClick = async (event: MouseEvent) => {
         const target = event.target as HTMLElement
+
         if (target.classList.contains('latex-input-link') || target.classList.contains('latex-graphics-link')) {
           const inputPath = target.getAttribute('data-input-path')
           const linkType = target.getAttribute('data-link-type')
@@ -342,21 +427,21 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
                 const cleanPath = inputPath.startsWith('./') ? inputPath.substring(2) : inputPath
                 const imageExtensions = ['.png', '.jpg', '.jpeg', '.pdf', '.eps', '.svg', '.gif']
                 const hasExtension = imageExtensions.some(ext => cleanPath.toLowerCase().endsWith(ext))
-                
+
                 if (hasExtension) {
-                  return file.name === cleanPath || file.path === cleanPath || 
+                  return file.name === cleanPath || file.path === cleanPath ||
                          (file.name.split('/').pop() || '') === cleanPath
                 } else {
                   return imageExtensions.some(ext => {
                     const pathWithExt = cleanPath + ext
-                    return file.name === pathWithExt || file.path === pathWithExt || 
+                    return file.name === pathWithExt || file.path === pathWithExt ||
                            (file.name.split('/').pop() || '') === pathWithExt
                   })
                 }
               } else {
                 // For .tex files
                 const cleanPath = inputPath.endsWith('.tex') ? inputPath : inputPath + '.tex'
-                return file.name === cleanPath || file.path === cleanPath || 
+                return file.name === cleanPath || file.path === cleanPath ||
                        (file.name.split('/').pop() || '') === cleanPath
               }
             })
@@ -364,9 +449,54 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
               onFileSelect(linkedFile)
             }
           }
+        } else if (target.classList.contains('latex-ref-link')) {
+          const label = target.getAttribute('data-label')
+          if (label && files && onFileSelect) {
+            try {
+              const result = await findLabelInFiles(label)
+              if (result) {
+                // Select the file containing the label
+                onFileSelect(result.file)
+
+                // Scroll to the label after file is loaded (with retry logic)
+                let scrollRetries = 0
+                const maxRetries = 2
+
+                const attemptScroll = () => {
+                  const lineNumbersRows = document.querySelector('span.line-numbers-rows')
+                  const lineElement = lineNumbersRows?.children[result.lineNumber]
+
+                  if (lineElement) {
+                    lineElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+                    // Highlight all keyword tokens matching the label
+                    const keywords = document.querySelectorAll('span.token.keyword')
+                    keywords.forEach(el => {
+                      if (el.textContent?.trim() === label) {
+                        el.classList.add('highlight-label')
+                        setTimeout(() => {
+                          el.classList.remove('highlight-label')
+                        }, 5000)
+                      }
+                    })
+                  } else if (scrollRetries < maxRetries) {
+                    scrollRetries++
+                    setTimeout(attemptScroll, 100)
+                  }
+                }
+
+                setTimeout(attemptScroll, 100)
+              } else {
+                onError?.(`Label '${label}' not found`)
+              }
+            } catch (error) {
+              console.error('Error searching for label:', error)
+              onError?.(`Error searching for label '${label}'`)
+            }
+          }
         }
       }
-      
+
       document.addEventListener('click', handleLatexLinkClick)
       
       return () => {

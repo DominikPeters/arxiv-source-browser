@@ -1454,3 +1454,44 @@
   color: #994400 !important;
   background-color: rgba(204, 102, 0, 0.1) !important;
 }
+
+/* LaTeX reference links */
+.latex-ref-link {
+  cursor: pointer !important;
+  color: #0066cc !important;
+  text-decoration: underline !important;
+  transition: all 0.05s ease-in-out !important;
+}
+
+.latex-ref-link:hover {
+  color: #004499 !important;
+  background-color: rgba(0, 102, 204, 0.1) !important;
+  text-decoration: none !important;
+  border-radius: 3px !important;
+  padding: 1px 2px !important;
+  margin: -1px -2px !important;
+}
+
+/* Highlight label when scrolled to */
+.token.keyword.highlight-label {
+  animation: labelHighlight 4s ease-out forwards;
+}
+
+@keyframes labelHighlight {
+  0% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+  5% {
+    background-color: rgb(255, 240, 182);
+    box-shadow: 0 0 6px rgb(219 209 171);
+  }
+  80% {
+    background-color: rgb(255, 240, 182);
+    box-shadow: 0 0 6px rgb(219 209 171);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
