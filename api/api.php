@@ -73,26 +73,118 @@ function downloadFile($url, $destination) {
 
 /**
  * Extract tar.gz file to a directory
+ * Also handles plain gzip files (single file submissions)
  */
 function extractTarGz($tarFile, $extractDir) {
     if (!file_exists($tarFile)) {
         return false;
     }
-    
+
     // Create extraction directory
     if (!is_dir($extractDir)) {
         mkdir($extractDir, 0755, true);
     }
-    
+
     // Use PharData to extract tar.gz
     try {
         $phar = new PharData($tarFile);
         $phar->extractTo($extractDir);
         return true;
     } catch (Exception $e) {
-        // No shell fallback for security - rely only on PharData
+        // PharData failed - might be a plain gzip file (single file submission)
+        // Try to decompress as plain gzip
+        return extractPlainGzip($tarFile, $extractDir);
+    }
+}
+
+/**
+ * Extract a plain gzip file (not tar.gz) to a directory
+ * arXiv serves single-file submissions as plain .gz files
+ */
+function extractPlainGzip($gzFile, $extractDir) {
+    // Try to get the original filename from gzip header
+    $originalName = getGzipOriginalName($gzFile);
+    if (!$originalName) {
+        // Fall back to main.tex if we can't determine the original name
+        $originalName = 'main.tex';
+    }
+
+    // Create extraction directory if needed
+    if (!is_dir($extractDir)) {
+        mkdir($extractDir, 0755, true);
+    }
+
+    // Decompress the gzip file
+    $gzHandle = gzopen($gzFile, 'rb');
+    if (!$gzHandle) {
         return false;
     }
+
+    $outputPath = $extractDir . '/' . $originalName;
+    $outHandle = fopen($outputPath, 'wb');
+    if (!$outHandle) {
+        gzclose($gzHandle);
+        return false;
+    }
+
+    while (!gzeof($gzHandle)) {
+        $chunk = gzread($gzHandle, 8192);
+        fwrite($outHandle, $chunk);
+    }
+
+    gzclose($gzHandle);
+    fclose($outHandle);
+
+    return file_exists($outputPath) && filesize($outputPath) > 0;
+}
+
+/**
+ * Extract original filename from gzip header
+ * Gzip format stores the original filename if FNAME flag is set
+ */
+function getGzipOriginalName($gzFile) {
+    $handle = fopen($gzFile, 'rb');
+    if (!$handle) {
+        return null;
+    }
+
+    // Read gzip header (minimum 10 bytes)
+    $header = fread($handle, 10);
+    if (strlen($header) < 10) {
+        fclose($handle);
+        return null;
+    }
+
+    // Check gzip magic number (0x1f 0x8b)
+    if (ord($header[0]) !== 0x1f || ord($header[1]) !== 0x8b) {
+        fclose($handle);
+        return null;
+    }
+
+    $flags = ord($header[3]);
+
+    // FEXTRA (bit 2) - skip extra field if present
+    if ($flags & 0x04) {
+        $extraLen = unpack('v', fread($handle, 2))[1];
+        fseek($handle, $extraLen, SEEK_CUR);
+    }
+
+    // FNAME (bit 3) - original filename is present
+    if ($flags & 0x08) {
+        $name = '';
+        while (($char = fgetc($handle)) !== false && $char !== "\0") {
+            $name .= $char;
+        }
+        fclose($handle);
+        // Sanitize filename - only allow safe characters
+        $name = basename($name);
+        if (preg_match('/^[a-zA-Z0-9._-]+$/', $name)) {
+            return $name;
+        }
+    }
+
+    fclose($handle);
+    return null;
 }
 
 /**
@@ -110,9 +202,9 @@ function createZipFromDirectory($sourceDir, $zipFile) {
     
     // Check if the extracted directory contains a single subdirectory
     // If so, use that as the source to avoid nested folder structure
-    $items = array_diff(scandir($sourceDir), ['.', '..']);
+    $items = array_values(array_diff(scandir($sourceDir), ['.', '..']));
     if (count($items) === 1 && is_dir($sourceDir . '/' . $items[0])) {
-        $sourceDir = $sourceDir . '/' . array_values($items)[0];
+        $sourceDir = $sourceDir . '/' . $items[0];
     }
     
     $iterator = new RecursiveIteratorIterator(
