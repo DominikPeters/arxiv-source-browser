@@ -79,15 +79,22 @@ function hasHeadingTag(tagSpec: TagStyle['tag']): boolean {
 
 const codeViewerHighlightStyle = defaultHighlightSpecs
   ? HighlightStyle.define(
-      defaultHighlightSpecs.map((spec) => {
-        if (!hasHeadingTag(spec.tag) || spec.textDecoration === undefined) {
-          return spec
-        }
+      [
+        ...defaultHighlightSpecs.map((spec) => {
+          if (!hasHeadingTag(spec.tag) || spec.textDecoration === undefined) {
+            return spec
+          }
 
-        const rest = { ...spec }
-        delete rest.textDecoration
-        return rest
-      })
+          const rest = { ...spec }
+          delete rest.textDecoration
+          return rest
+        }),
+        {
+          tag: tags.heading,
+          color: 'var(--secondary-color)',
+          textDecoration: 'none',
+        },
+      ]
     )
   : defaultHighlightStyle
 

@@ -5,7 +5,7 @@ import { EditorView } from '@codemirror/view'
 import { estimateTokenCount } from 'tokenx'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
-import { stripLatexComments } from '../latexComments'
+import { buildVisibleLineMapAfterCommentStrip, stripLatexComments } from '../latexComments'
 import {
   createCodeViewerExtensionController,
   type CodeViewerConfig,
@@ -34,7 +34,8 @@ async function findLabelInFiles(label: string): Promise<{ file: FileEntry; lineN
       const lines = content.split('\n')
 
       for (let i = 0; i < lines.length; i++) {
-        if (labelPattern.test(lines[i])) {
+        const visibleLine = stripLatexComments(lines[i])
+        if (visibleLine && labelPattern.test(visibleLine)) {
           return { file, lineNumber: i }
         }
       }
@@ -341,10 +342,22 @@ function FileViewer({
 
           onFileSelect(result.file)
 
+          let targetLineNumber = result.lineNumber + 1
+          // Hide-comments mode removes full-line comments, so map original line numbers
+          // into the rendered document line numbers before attempting to scroll.
+          if (hideComments && result.file.path === file.path) {
+            const fileContent = content || result.file.content || await result.file.zipFile.async('text')
+            const lineMap = buildVisibleLineMapAfterCommentStrip(fileContent)
+            const mappedLine = lineMap[result.lineNumber]
+            if (mappedLine && mappedLine > 0) {
+              targetLineNumber = mappedLine
+            }
+          }
+
           let retries = 0
           const maxRetries = 2
           const attemptScroll = () => {
-            if (scrollToLineNumber(result.lineNumber + 1)) {
+            if (scrollToLineNumber(targetLineNumber)) {
               return
             }
 
@@ -361,7 +374,7 @@ function FileViewer({
         }
       }
     },
-    [files, onFileSelect, onError, scrollToLineNumber]
+    [content, file.path, files, hideComments, onFileSelect, onError, scrollToLineNumber]
   )
 
   const editorInteractionExtension = useMemo(() => {
