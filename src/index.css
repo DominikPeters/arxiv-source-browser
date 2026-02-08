@@ -3,33 +3,40 @@
   line-height: 1.5;
   font-weight: 400;
 
-  /* Modern color palette */
-  --primary-color: #2563eb;
-  --primary-hover: #1d4ed8;
-  --secondary-color: #64748b;
-  --accent-color: #0ea5e9;
+  /* Primary colors (arXiv red) */
+  --primary-color: #b31b1b;
+  --primary-hover: #8f1616;
+  --primary-light: #d94848;
+
+  /* Secondary colors (warm amber) */
+  --secondary-color: #b45309;
+  --secondary-hover: #92400e;
+  --accent-color: #d97706;
+  --accent-light: #fbbf24;
+
+  /* Status colors */
   --success-color: #059669;
   --warning-color: #d97706;
   --error-color: #dc2626;
-  
-  /* Background colors */
+
+  /* Background colors (warm tones) */
   --bg-primary: #ffffff;
-  --bg-secondary: #f8fafc;
-  --bg-tertiary: #f1f5f9;
-  
-  /* Text colors */
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #64748b;
-  
+  --bg-secondary: #fafaf9;
+  --bg-tertiary: #f5f5f4;
+
+  /* Text colors (stone palette) */
+  --text-primary: #1c1917;
+  --text-secondary: #57534e;
+  --text-muted: #78716c;
+
   /* Border colors */
-  --border-primary: #e2e8f0;
-  --border-secondary: #cbd5e1;
-  
-  /* Shadow */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --border-primary: #e7e5e4;
+  --border-secondary: #d6d3d1;
+
+  /* Shadows (simplified) */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.03);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.06);
+  --shadow-lg: 0 4px 8px -2px rgb(0 0 0 / 0.08);
 
   color: var(--text-primary);
   background-color: var(--bg-primary);
@@ -74,14 +81,13 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 button {
-  border-radius: 6px;
+  border-radius: 4px;
   border: 1px solid transparent;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.2s ease-in-out;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -100,16 +106,15 @@ button:disabled {
 }
 
 input, textarea {
-  border-radius: 6px;
+  border-radius: 4px;
   border: 1px solid var(--border-primary);
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
   font-family: inherit;
-  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
 }
 
 input:focus, textarea:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.1);
+  box-shadow: 0 0 0 3px rgb(179 27 27 / 0.15);
 }
