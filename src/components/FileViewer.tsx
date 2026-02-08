@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Download, Copy, Check } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Download, Copy, Check, Percent } from 'lucide-react'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
 import Prism from 'prismjs'
@@ -17,7 +17,7 @@ Prism.languages.latex.comment = {
 
 // Ensure Prism is available globally for plugins
 if (typeof window !== 'undefined') {
-  (window as any).Prism = Prism;
+  ;(window as Window & { Prism?: typeof Prism }).Prism = Prism
 }
 
 let latexInputLinkerInstalled = false
@@ -222,11 +222,12 @@ function setupLatexInputLinker(files: FileEntry[]) {
         // Look for reference commands: \ref, \Cref, \cref, \eqref, \pageref, \autoref
         const refCommands = ['\\ref', '\\Cref', '\\cref', '\\eqref', '\\pageref', '\\autoref']
         if (token1 && typeof token1 === 'object' && 'type' in token1 && 'content' in token1 &&
-            token1.type === 'function' && refCommands.includes((token1 as any).content) &&
+            token1.type === 'function' &&
+            refCommands.includes((token1 as { content?: string }).content || '') &&
             token2 && typeof token2 === 'object' && 'type' in token2 && 'content' in token2 &&
             token2.type === 'punctuation' && token2.content === '{') {
 
-          const command = (token1 as any).content
+          const command = (token1 as { content?: string }).content || ''
 
           // Find the closing brace and collect label
           let label = ''
@@ -320,17 +321,66 @@ interface FileViewerProps {
   onFileSelect?: (file: FileEntry) => void
 }
 
+function stripLatexComments(text: string): string {
+  const outputLines: string[] = []
+
+  for (const line of text.split('\n')) {
+    let transformedLine = line
+    let removeLine = false
+
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] !== '%') {
+        continue
+      }
+
+      // In TeX, an odd number of preceding backslashes means % is escaped (\%).
+      let backslashCount = 0
+      let j = i - 1
+      while (j >= 0 && line[j] === '\\') {
+        backslashCount++
+        j--
+      }
+
+      if (backslashCount % 2 === 0) {
+        if (i === 0) {
+          // Remove lines that are purely comments (% at the first character).
+          removeLine = true
+        } else {
+          // Remove only whitespace directly before an inline comment marker.
+          transformedLine = line.slice(0, i).replace(/[ \t]+$/, '')
+        }
+        break
+      }
+    }
+
+    if (!removeLine) {
+      outputLines.push(transformedLine)
+    }
+  }
+
+  return outputLines.join('\n')
+}
+
 export default function FileViewer({ file, wordWrap = true, onError, files, onFileSelect }: FileViewerProps) {
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [imageUrl, setImageUrl] = useState<string>('')
   const [pdfUrl, setPdfUrl] = useState<string>('')
   const [copySuccess, setCopySuccess] = useState(false)
+  const [hideComments, setHideComments] = useState(false)
+  const fileType = getFileType(file.name)
+  const displayContent = useMemo(() => {
+    if (fileType === 'tex' && hideComments) {
+      return stripLatexComments(content)
+    }
+    return content
+  }, [content, fileType, hideComments])
 
   useEffect(() => {
     setImageUrl('')
     setContent('')
     setPdfUrl('')
+    setHideComments(false)
     
     // Scroll to top when file changes
     window.scrollTo(0, 0)
@@ -406,7 +456,7 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
   }, [file])
 
   useEffect(() => {
-    if (content && !loading) {
+    if (displayContent && !loading) {
       if (files && onFileSelect) {
         setupLatexInputLinker(files)
       }
@@ -503,7 +553,7 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
         document.removeEventListener('click', handleLatexLinkClick)
       }
     }
-  }, [content, loading, wordWrap, files, onFileSelect])
+  }, [displayContent, loading, wordWrap, files, onFileSelect, onError])
 
   useEffect(() => {
     if (copySuccess) {
@@ -514,11 +564,29 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
     }
   }, [copySuccess])
 
-  const fileType = getFileType(file.name)
+  const shouldShowCommentToggle = () => {
+    return fileType === 'tex'
+  }
+
+  const getCurrentTextContent = async () => {
+    let textContent = content
+    if (!textContent && file.content === null) {
+      textContent = await file.zipFile.async('text')
+    }
+    return fileType === 'tex' && hideComments ? stripLatexComments(textContent) : textContent
+  }
 
   const downloadFile = async () => {
     try {
-      const blob = await file.zipFile.async('blob')
+      let blob: Blob
+
+      if (fileType === 'tex' && hideComments) {
+        const textContent = await getCurrentTextContent()
+        blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' })
+      } else {
+        blob = await file.zipFile.async('blob')
+      }
+
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -578,11 +646,7 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
         return
       }
       
-      let textContent = content
-      if (!textContent && file.content === null) {
-        textContent = await file.zipFile.async('text')
-      }
-      
+      const textContent = await getCurrentTextContent()
       await navigator.clipboard.writeText(textContent)
       setCopySuccess(true)
     } catch (error) {
@@ -592,8 +656,52 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
   }
 
   const shouldShowCopyButton = () => {
-    const fileType = getFileType(file.name)
     return fileType !== 'pdf'
+  }
+
+  const renderFileActions = () => {
+    const copyTooltip = copySuccess
+      ? 'Copied to clipboard'
+      : (fileType === 'tex' && hideComments
+          ? 'Copy without LaTeX comments'
+          : 'Copy to clipboard')
+    const downloadTooltip = fileType === 'tex' && hideComments
+      ? 'Download without comments'
+      : 'Download file'
+
+    return (
+      <div className="file-actions">
+        {shouldShowCommentToggle() && (
+          <button
+            className={`comment-toggle-button ${hideComments ? 'active' : ''}`}
+            onClick={() => setHideComments((prev) => !prev)}
+            data-tooltip={hideComments ? 'Show LaTeX comments' : 'Hide LaTeX comments'}
+            aria-label={hideComments ? 'Show LaTeX comments' : 'Hide LaTeX comments'}
+            aria-pressed={hideComments}
+          >
+            <Percent size={16} strokeWidth={1.75} aria-hidden="true" />
+          </button>
+        )}
+        {shouldShowCopyButton() && (
+          <button
+            className={`copy-file-button ${copySuccess ? 'success' : ''}`}
+            onClick={copyToClipboard}
+            data-tooltip={copyTooltip}
+            aria-label={copyTooltip}
+          >
+            {copySuccess ? <Check size={16} /> : <Copy size={16} />}
+          </button>
+        )}
+        <button
+          className="download-file-button"
+          onClick={downloadFile}
+          data-tooltip={downloadTooltip}
+          aria-label={downloadTooltip}
+        >
+          <Download size={16} />
+        </button>
+      </div>
+    )
   }
 
   if (loading) {
@@ -605,24 +713,7 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
       <div className="file-viewer">
         <div className="file-header">
           <h3>{file.name}</h3>
-          <div className="file-actions">
-            {shouldShowCopyButton() && (
-              <button 
-                className={`copy-file-button ${copySuccess ? 'success' : ''}`}
-                onClick={copyToClipboard}
-                title={copySuccess ? 'Copied!' : 'Copy to clipboard'}
-              >
-                {copySuccess ? <Check size={16} /> : <Copy size={16} />}
-              </button>
-            )}
-            <button 
-              className="download-file-button"
-              onClick={downloadFile}
-              title={`Download ${file.name}`}
-            >
-              <Download size={16} />
-            </button>
-          </div>
+          {renderFileActions()}
         </div>
         <div className="file-content image-content">
           {imageUrl && <img src={imageUrl} alt={file.name} />}
@@ -636,24 +727,7 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
       <div className="file-viewer">
         <div className="file-header">
           <h3>{file.name}</h3>
-          <div className="file-actions">
-            {shouldShowCopyButton() && (
-              <button 
-                className={`copy-file-button ${copySuccess ? 'success' : ''}`}
-                onClick={copyToClipboard}
-                title={copySuccess ? 'Copied!' : 'Copy to clipboard'}
-              >
-                {copySuccess ? <Check size={16} /> : <Copy size={16} />}
-              </button>
-            )}
-            <button 
-              className="download-file-button"
-              onClick={downloadFile}
-              title={`Download ${file.name}`}
-            >
-              <Download size={16} />
-            </button>
-          </div>
+          {renderFileActions()}
         </div>
         <div className="file-content pdf-content">
           {pdfUrl ? (
@@ -701,27 +775,10 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
             <span className="file-type">{fileType.toUpperCase()}</span>
           )}
         </div>
-        <div className="file-actions">
-          {shouldShowCopyButton() && (
-            <button 
-              className={`copy-file-button ${copySuccess ? 'success' : ''}`}
-              onClick={copyToClipboard}
-              title={copySuccess ? 'Copied!' : 'Copy to clipboard'}
-            >
-              {copySuccess ? <Check size={16} /> : <Copy size={16} />}
-            </button>
-          )}
-          <button 
-            className="download-file-button"
-            onClick={downloadFile}
-            title={`Download ${file.name}`}
-          >
-            <Download size={16} />
-          </button>
-        </div>
+        {renderFileActions()}
       </div>
       <div className="file-content">
-        {renderWithLineNumbers(content)}
+        {renderWithLineNumbers(displayContent)}
       </div>
     </div>
   )

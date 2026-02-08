@@ -209,7 +209,8 @@ const FileBrowser = forwardRef<FileBrowserRef, FileBrowserProps>(({ files, onFil
         <button 
           className="files-header-button"
           onClick={onToggleCollapse}
-          title={isCollapsed ? "Expand file browser" : "Collapse file browser"}
+          data-tooltip={isCollapsed ? "Expand file browser" : "Collapse file browser"}
+          aria-label={isCollapsed ? "Expand file browser" : "Collapse file browser"}
         >
           <h3>Files ({files.length})</h3>
           {onToggleCollapse && (
@@ -222,7 +223,8 @@ const FileBrowser = forwardRef<FileBrowserRef, FileBrowserProps>(({ files, onFil
           <button 
             className="search-button" 
             onClick={() => setShowSearch(true)}
-            title="Search files and content"
+            data-tooltip="Search files and content"
+            aria-label="Search files and content"
           >
             <Search size={16} />
           </button>
@@ -230,7 +232,8 @@ const FileBrowser = forwardRef<FileBrowserRef, FileBrowserProps>(({ files, onFil
             <button 
               className="download-zip-button" 
               onClick={onDownloadZip}
-              title="Download entire source as ZIP"
+              data-tooltip="Download the full source ZIP"
+              aria-label="Download the full source ZIP"
             >
               <Download size={16} />
               ZIP

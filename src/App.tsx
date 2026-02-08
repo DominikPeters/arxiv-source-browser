@@ -305,7 +305,8 @@ function App() {
           <button 
             className="settings-button"
             onClick={() => setShowSettings(true)}
-            title="Settings"
+            data-tooltip="Open settings"
+            aria-label="Open settings"
           >
             <SettingsIcon size={20} />
           </button>

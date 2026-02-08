@@ -46,6 +46,89 @@
   filter: brightness(1.1);
 }
 
+button[data-tooltip] {
+  position: relative;
+}
+
+button[data-tooltip]::before,
+button[data-tooltip]::after {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  position: absolute;
+  z-index: 1200;
+}
+
+button[data-tooltip]::before {
+  content: '';
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-2px);
+  border: 5px solid transparent;
+  border-bottom-color: rgb(28 25 23 / 0.94);
+}
+
+button[data-tooltip]::after {
+  content: attr(data-tooltip);
+  top: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-2px);
+  background: rgb(28 25 23 / 0.94);
+  color: #fff;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: var(--shadow-md);
+}
+
+button[data-tooltip]:hover::before,
+button[data-tooltip]:hover::after,
+button[data-tooltip]:focus-visible::before,
+button[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* In right-aligned action rows, anchor tooltips to button's right edge
+   so text stays inside the viewport/container. */
+.file-actions button[data-tooltip]::before,
+.file-browser-actions button[data-tooltip]::before {
+  left: auto;
+  right: 0.55rem;
+  transform: translateY(-2px);
+}
+
+.file-actions button[data-tooltip]::after,
+.file-browser-actions button[data-tooltip]::after {
+  left: auto;
+  right: 0;
+  transform: translateY(-2px);
+  width: max-content;
+  max-width: none;
+  white-space: nowrap;
+}
+
+.file-actions button[data-tooltip]:hover::before,
+.file-actions button[data-tooltip]:hover::after,
+.file-actions button[data-tooltip]:focus-visible::before,
+.file-actions button[data-tooltip]:focus-visible::after,
+.file-browser-actions button[data-tooltip]:hover::before,
+.file-browser-actions button[data-tooltip]:hover::after,
+.file-browser-actions button[data-tooltip]:focus-visible::before,
+.file-browser-actions button[data-tooltip]:focus-visible::after {
+  transform: translateY(0);
+}
+
+@media (hover: none) {
+  button[data-tooltip]::before,
+  button[data-tooltip]::after {
+    display: none;
+  }
+}
+
 .settings-button {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
@@ -568,8 +651,8 @@
 }
 
 .file-type {
-  background: var(--secondary-color);
-  color: white;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
   padding: 0.375rem 0.75rem;
   border-radius: 4px;
   font-size: 0.75rem;
@@ -581,7 +664,8 @@
 }
 
 .download-file-button,
-.copy-file-button {
+.copy-file-button,
+.comment-toggle-button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -595,11 +679,30 @@
 }
 
 .download-file-button:hover,
-.copy-file-button:hover {
+.copy-file-button:hover,
+.comment-toggle-button:hover {
   background: var(--secondary-color);
   border-color: var(--secondary-color);
   color: white;
   box-shadow: var(--shadow-md);
+}
+
+.comment-toggle-button.active {
+  background: var(--bg-primary);
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.12);
+}
+
+.comment-toggle-button.active:hover {
+  background: var(--bg-primary);
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.12);
+}
+
+.comment-toggle-button svg {
+  display: block;
 }
 
 .copy-file-button.success {

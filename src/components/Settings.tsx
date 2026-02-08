@@ -30,7 +30,7 @@ export default function Settings({ wordWrap, onWordWrapChange, onClose }: Settin
       <div className="settings-modal">
         <div className="settings-header">
           <h2>Settings</h2>
-          <button className="close-button" onClick={onClose}>
+          <button className="close-button" onClick={onClose} data-tooltip="Close settings" aria-label="Close settings">
             <X size={20} />
           </button>
         </div>

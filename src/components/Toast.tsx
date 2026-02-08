@@ -35,7 +35,7 @@ export default function Toast({ message, type = 'error', onClose, duration = 500
         <div className="toast-message">
           {message}
         </div>
-        <button className="toast-close" onClick={onClose}>
+        <button className="toast-close" onClick={onClose} data-tooltip="Dismiss message" aria-label="Dismiss message">
           <X size={16} />
         </button>
       </div>

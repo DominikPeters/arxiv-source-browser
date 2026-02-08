@@ -312,7 +312,7 @@ export default function Search({ files, onFileSelect, onClose }: SearchProps) {
               className="search-input"
             />
           </div>
-          <button onClick={onClose} className="search-close-button">
+          <button onClick={onClose} className="search-close-button" data-tooltip="Close search" aria-label="Close search">
             <X size={16} />
           </button>
         </div>
