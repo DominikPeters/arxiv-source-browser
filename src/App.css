@@ -46,12 +46,12 @@
   filter: brightness(1.1);
 }
 
-button[data-tooltip] {
+[data-tooltip] {
   position: relative;
 }
 
-button[data-tooltip]::before,
-button[data-tooltip]::after {
+[data-tooltip]::before,
+[data-tooltip]::after {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.14s ease, transform 0.14s ease;
@@ -59,7 +59,7 @@ button[data-tooltip]::after {
   z-index: 1200;
 }
 
-button[data-tooltip]::before {
+[data-tooltip]::before {
   content: '';
   top: calc(100% + 2px);
   left: 50%;
@@ -68,7 +68,7 @@ button[data-tooltip]::before {
   border-bottom-color: rgb(28 25 23 / 0.94);
 }
 
-button[data-tooltip]::after {
+[data-tooltip]::after {
   content: attr(data-tooltip);
   top: calc(100% + 12px);
   left: 50%;
@@ -77,6 +77,7 @@ button[data-tooltip]::after {
   color: #fff;
   padding: 0.35rem 0.5rem;
   border-radius: 4px;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 0.72rem;
   line-height: 1.25;
   font-weight: 500;
@@ -84,10 +85,10 @@ button[data-tooltip]::after {
   box-shadow: var(--shadow-md);
 }
 
-button[data-tooltip]:hover::before,
-button[data-tooltip]:hover::after,
-button[data-tooltip]:focus-visible::before,
-button[data-tooltip]:focus-visible::after {
+[data-tooltip]:hover::before,
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::before,
+[data-tooltip]:focus-visible::after {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
@@ -123,8 +124,8 @@ button[data-tooltip]:focus-visible::after {
 }
 
 @media (hover: none) {
-  button[data-tooltip]::before,
-  button[data-tooltip]::after {
+  [data-tooltip]::before,
+  [data-tooltip]::after {
     display: none;
   }
 }
@@ -782,6 +783,17 @@ button[data-tooltip]:focus-visible::after {
   box-shadow: var(--shadow-sm);
 }
 
+.token-estimate {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.75rem;
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  font-family: ui-monospace, 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  white-space: nowrap;
+  cursor: help;
+}
+
 .download-file-button,
 .copy-file-button,
 .comment-toggle-button {
@@ -1279,6 +1291,11 @@ button[data-tooltip]:focus-visible::after {
   
   .file-type {
     margin-left: 0;
+  }
+
+  .token-estimate {
+    margin-left: 0.5rem;
+    font-size: 0.58rem;
   }
   
   .tree-node {

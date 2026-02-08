@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Copy, Check, Percent } from 'lucide-react'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
+import { estimateTokenCount } from 'tokenx'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
 import { stripLatexComments } from '../latexComments'
@@ -118,6 +119,8 @@ function FileViewer({
   const [pdfUrl, setPdfUrl] = useState<string>('')
   const [copySuccess, setCopySuccess] = useState(false)
   const [hideComments, setHideComments] = useState(false)
+  const [selectionTokenCount, setSelectionTokenCount] = useState<number | null>(null)
+  const [hasActiveSelection, setHasActiveSelection] = useState(false)
 
   const fileType = getFileType(file.name)
   const editorContainerRef = useRef<HTMLDivElement>(null)
@@ -133,6 +136,23 @@ function FileViewer({
     }
     return content
   }, [content, fileType, hideComments])
+
+  const fullDocumentTokenCount = useMemo(() => {
+    if (fileType === 'image' || fileType === 'pdf') {
+      return null
+    }
+
+    try {
+      return estimateTokenCount(displayContent)
+    } catch (error) {
+      console.error('Error estimating token count:', error)
+      return null
+    }
+  }, [displayContent, fileType])
+
+  const estimatedTokenCount = hasActiveSelection && selectionTokenCount !== null
+    ? selectionTokenCount
+    : fullDocumentTokenCount
 
   const getCodeViewerMode = useCallback((currentFileType: ReturnType<typeof getFileType>): CodeViewerMode => {
     switch (currentFileType) {
@@ -193,6 +213,34 @@ function FileViewer({
     lastVisibleLineRef.current = lineNumber
     onVisibleLineChange(lineNumber)
   }, [fileType, getTopVisibleLineNumber, onVisibleLineChange])
+
+  const updateSelectionTokenEstimate = useCallback((editorView: EditorView) => {
+    if (fileType === 'image' || fileType === 'pdf') {
+      setHasActiveSelection(false)
+      setSelectionTokenCount(null)
+      return
+    }
+
+    const nonEmptyRanges = editorView.state.selection.ranges.filter((range) => !range.empty)
+    if (nonEmptyRanges.length === 0) {
+      setHasActiveSelection(false)
+      setSelectionTokenCount(null)
+      return
+    }
+
+    const selectedText = nonEmptyRanges
+      .map((range) => editorView.state.doc.sliceString(range.from, range.to))
+      .join('\n')
+
+    try {
+      setSelectionTokenCount(estimateTokenCount(selectedText))
+      setHasActiveSelection(true)
+    } catch (error) {
+      console.error('Error estimating selected token count:', error)
+      setHasActiveSelection(false)
+      setSelectionTokenCount(null)
+    }
+  }, [fileType])
 
   const scheduleVisibleLineReport = useCallback((editorView: EditorView, force = false) => {
     if (!onVisibleLineChange || fileType !== 'tex') {
@@ -317,8 +365,18 @@ function FileViewer({
   )
 
   const editorInteractionExtension = useMemo(() => {
+    const updateListener = EditorView.updateListener.of((update) => {
+      if (update.selectionSet || update.docChanged) {
+        updateSelectionTokenEstimate(update.view)
+      }
+
+      if (fileType === 'tex' && (update.viewportChanged || update.docChanged)) {
+        scheduleVisibleLineReport(update.view)
+      }
+    })
+
     if (fileType !== 'tex') {
-      return []
+      return [updateListener]
     }
 
     return [
@@ -326,13 +384,9 @@ function FileViewer({
       createLatexLinkClickExtension((link) => {
         void handleLatexLinkClick(link)
       }),
-      EditorView.updateListener.of((update) => {
-        if (update.viewportChanged || update.docChanged) {
-          scheduleVisibleLineReport(update.view)
-        }
-      }),
+      updateListener,
     ]
-  }, [fileType, handleLatexLinkClick, scheduleVisibleLineReport])
+  }, [fileType, handleLatexLinkClick, scheduleVisibleLineReport, updateSelectionTokenEstimate])
 
   useEffect(() => {
     onHideCommentsChange?.(hideComments)
@@ -347,6 +401,8 @@ function FileViewer({
     setContent('')
     setPdfUrl('')
     setHideComments(false)
+    setHasActiveSelection(false)
+    setSelectionTokenCount(null)
 
     window.scrollTo(0, 0)
 
@@ -711,6 +767,15 @@ function FileViewer({
         <div className="file-info">
           <h3>{file.name}</h3>
           {fileType !== 'unknown' && <span className="file-type">{fileType.toUpperCase()}</span>}
+          {estimatedTokenCount !== null && (
+            <span
+              className="token-estimate"
+              data-tooltip="Estimate of token count when pasted into an LLM"
+              aria-label="Estimate of token count when pasted into an LLM"
+            >
+              {estimatedTokenCount.toLocaleString()} tokens
+            </span>
+          )}
         </div>
         {renderFileActions()}
       </div>

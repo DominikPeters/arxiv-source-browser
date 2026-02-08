@@ -522,7 +522,7 @@ function App() {
 
             <div className="about-section">
               <p>This website is maintained by <a href="https://dominik-peters.de">Dominik Peters</a> and is not affiliated with arXiv.org.</p>
-              <p>First published: June 2025. Last updated: December 2025, version 1.2.</p>
+              <p>First published: June 2025. Last updated: February 2026, version 2.0.</p>
               <p>Source code is available on <a href="https://github.com/DominikPeters/arxiv-source-browser">GitHub</a> under MIT license. The app was mostly implemented using Claude Code.</p>
             </div>
           </div>
