@@ -5,11 +5,15 @@ import { File, Folder, FolderOpen, FileText, Image, BookOpen, FileType, Download
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
 import SearchComponent from './Search'
+import type { TexOutlineEntry } from '../texOutline'
 
 interface FileBrowserProps {
   files: FileEntry[]
   onFileSelect: (file: FileEntry) => void
   selectedFile: FileEntry | null
+  texOutline?: TexOutlineEntry[]
+  selectedOutlineLine?: number | null
+  onOutlineSelect?: (lineNumber: number) => void
   onDownloadZip?: () => void
   isCollapsed?: boolean
   onToggleCollapse?: () => void
@@ -27,7 +31,17 @@ interface TreeNode {
   isFolder: boolean
 }
 
-const FileBrowser = forwardRef<FileBrowserRef, FileBrowserProps>(({ files, onFileSelect, selectedFile, onDownloadZip, isCollapsed = false, onToggleCollapse }, ref) => {
+const FileBrowser = forwardRef<FileBrowserRef, FileBrowserProps>(({
+  files,
+  onFileSelect,
+  selectedFile,
+  texOutline = [],
+  selectedOutlineLine = null,
+  onOutlineSelect,
+  onDownloadZip,
+  isCollapsed = false,
+  onToggleCollapse
+}, ref) => {
   const treeContainerRef = useRef<HTMLDivElement>(null)
   const treeRef = useRef<TreeApi<TreeNode>>(null)
   const [treeHeight, setTreeHeight] = useState(400)
@@ -203,6 +217,8 @@ const FileBrowser = forwardRef<FileBrowserRef, FileBrowserProps>(({ files, onFil
     )
   }
 
+  const showOutline = texOutline.length > 0
+
   return (
     <div className={`file-browser-container ${isCollapsed ? 'collapsed' : ''}`}>
       <div className="file-browser-header">
@@ -241,19 +257,45 @@ const FileBrowser = forwardRef<FileBrowserRef, FileBrowserProps>(({ files, onFil
           )}
         </div>
       </div>
+
       {!isCollapsed && (
-        <div className="file-tree" ref={treeContainerRef}>
-          <Tree
-            ref={treeRef}
-            data={treeData}
-            openByDefault={false}
-            width="100%"
-            height={treeHeight}
-            indent={16}
-            rowHeight={28}
-          >
-            {Node}
-          </Tree>
+        <div className={`file-browser-panels ${showOutline ? 'with-outline' : ''}`}>
+          <div className="file-tree-panel">
+            <div className="file-tree" ref={treeContainerRef}>
+              <Tree
+                ref={treeRef}
+                data={treeData}
+                openByDefault={false}
+                width="100%"
+                height={treeHeight}
+                indent={16}
+                rowHeight={28}
+              >
+                {Node}
+              </Tree>
+            </div>
+          </div>
+
+          {showOutline && (
+            <div className="file-outline-panel">
+              <h4 className="file-outline-title">Outline</h4>
+              <div className="file-outline-list" role="list">
+                {texOutline.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    role="listitem"
+                    className={`outline-item depth-${Math.min(entry.depth, 6)} ${selectedOutlineLine === entry.lineNumber ? 'active' : ''}`}
+                    onClick={() => onOutlineSelect?.(entry.lineNumber)}
+                    title={`Jump to line ${entry.lineNumber}`}
+                  >
+                    <span className="outline-item-title">{entry.title}</span>
+                    <span className="outline-item-line">{entry.lineNumber}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
       {showSearch && (

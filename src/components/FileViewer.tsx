@@ -1,7 +1,8 @@
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Copy, Check, Percent } from 'lucide-react'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
+import { normalizeWrappedDisplayText, stripLatexComments } from '../latexComments'
 import Prism from 'prismjs'
 import 'prismjs/themes/prism.css'
 import 'prismjs/components/prism-latex'
@@ -22,7 +23,7 @@ if (typeof window !== 'undefined') {
 
 let latexInputLinkerInstalled = false
 let currentFiles: FileEntry[] = []
-const inputLinkMap: Map<string, FileEntry> = new Map()
+const inputLinkMap: Map<string, { file: FileEntry; inputPath: string; linkType: 'input' | 'graphics' }> = new Map()
 const refLinkMap: Map<string, { command: string; label: string }> = new Map()
 
 async function findLabelInFiles(label: string): Promise<{ file: FileEntry; lineNumber: number } | null> {
@@ -115,6 +116,29 @@ function setupLatexInputLinker(files: FileEntry[]) {
       return
     }
 
+    function tokenToText(token: string | object): string {
+      if (typeof token === 'string') {
+        return token
+      }
+
+      if (!token || typeof token !== 'object' || !('content' in token)) {
+        return ''
+      }
+
+      const content = (token as { content?: unknown }).content
+      if (typeof content === 'string') {
+        return content
+      }
+      if (Array.isArray(content)) {
+        return content.map((nested) => tokenToText(nested as string | object)).join('')
+      }
+      if (content && typeof content === 'object') {
+        return tokenToText(content as object)
+      }
+
+      return ''
+    }
+
     function processTokens(tokens: (string | object)[]): void {
       for (let i = 0; i < tokens.length - 2; i++) {
         const token1 = tokens[i]
@@ -151,9 +175,16 @@ function setupLatexInputLinker(files: FileEntry[]) {
             const linkedFile = findFileByPath(filename)
 
             if (linkedFile) {
-              // Store the mapping for later use in wrap hook
-              const content = `\\input{${filename}}`
-              inputLinkMap.set(content, linkedFile)
+              // Preserve the original token text so line breaks stay intact.
+              const content = tokens
+                .slice(i, endIndex + 1)
+                .map((token) => tokenToText(token))
+                .join('')
+              inputLinkMap.set(content, {
+                file: linkedFile,
+                inputPath: filename,
+                linkType: 'input'
+              })
 
               // Replace all tokens from i to endIndex with a single link token
               const linkToken = new Prism.Token('latex-input-link', content, undefined, content)
@@ -206,9 +237,16 @@ function setupLatexInputLinker(files: FileEntry[]) {
               const linkedFile = findFileByPath(filename, true)
 
               if (linkedFile) {
-                // Store the mapping for later use in wrap hook
-                const content = `\\includegraphics{${filename}}`
-                inputLinkMap.set(content, linkedFile)
+                // Preserve the original token text so line breaks stay intact.
+                const content = tokens
+                  .slice(i, endIndex + 1)
+                  .map((token) => tokenToText(token))
+                  .join('')
+                inputLinkMap.set(content, {
+                  file: linkedFile,
+                  inputPath: filename,
+                  linkType: 'graphics'
+                })
 
                 // Replace all tokens from i to endIndex with a single link token
                 const linkToken = new Prism.Token('latex-graphics-link', content, undefined, content)
@@ -252,7 +290,10 @@ function setupLatexInputLinker(files: FileEntry[]) {
 
           if (foundClosing && label.trim()) {
             // Store the mapping for later use in wrap hook
-            const content = `${command}{${label}}`
+            const content = tokens
+              .slice(i, endIndex + 1)
+              .map((token) => tokenToText(token))
+              .join('')
             refLinkMap.set(content, { command, label: label.trim() })
 
             // Replace all tokens from i to endIndex with a single link token
@@ -275,20 +316,10 @@ function setupLatexInputLinker(files: FileEntry[]) {
 
   Prism.hooks.add('wrap', (env) => {
     if (env.type === 'latex-input-link' || env.type === 'latex-graphics-link') {
-      const linkedFile = inputLinkMap.get(env.content)
+      const linkInfo = inputLinkMap.get(env.content)
 
-      if (linkedFile) {
-        let match, linkType
-
-        if (env.type === 'latex-input-link') {
-          match = env.content.match(/\\input\{([^}]+)\}/)
-          linkType = 'input'
-        } else {
-          match = env.content.match(/\\includegraphics\{([^}]+)\}/)
-          linkType = 'graphics'
-        }
-
-        const inputPath = match ? match[1] : 'unknown'
+      if (linkInfo) {
+        const { inputPath, linkType } = linkInfo
 
         env.tag = 'span'
         env.attributes.class = env.type === 'latex-input-link' ? 'latex-input-link' : 'latex-graphics-link'
@@ -300,8 +331,7 @@ function setupLatexInputLinker(files: FileEntry[]) {
       const refInfo = refLinkMap.get(env.content)
 
       if (refInfo) {
-        const match = env.content.match(/\\(\w+)\{([^}]+)\}/)
-        const label = match ? match[2] : 'unknown'
+        const label = refInfo.label
 
         env.tag = 'span'
         env.attributes.class = 'latex-ref-link'
@@ -319,62 +349,79 @@ interface FileViewerProps {
   onError?: (message: string) => void
   files?: FileEntry[]
   onFileSelect?: (file: FileEntry) => void
+  onHideCommentsChange?: (hideComments: boolean) => void
+  scrollToLine?: { lineNumber: number; token: number } | null
 }
 
-function stripLatexComments(text: string): string {
-  const outputLines: string[] = []
-
-  for (const line of text.split('\n')) {
-    let transformedLine = line
-    let removeLine = false
-
-    for (let i = 0; i < line.length; i++) {
-      if (line[i] !== '%') {
-        continue
-      }
-
-      // In TeX, an odd number of preceding backslashes means % is escaped (\%).
-      let backslashCount = 0
-      let j = i - 1
-      while (j >= 0 && line[j] === '\\') {
-        backslashCount++
-        j--
-      }
-
-      if (backslashCount % 2 === 0) {
-        if (i === 0) {
-          // Remove lines that are purely comments (% at the first character).
-          removeLine = true
-        } else {
-          // Remove only whitespace directly before an inline comment marker.
-          transformedLine = line.slice(0, i).replace(/[ \t]+$/, '')
-        }
-        break
-      }
-    }
-
-    if (!removeLine) {
-      outputLines.push(transformedLine)
+type PrismWithLineNumbers = typeof Prism & {
+  plugins?: {
+    lineNumbers?: {
+      resize: (element: Element) => void
     }
   }
-
-  return outputLines.join('\n')
 }
 
-function FileViewer({ file, wordWrap = true, onError, files, onFileSelect }: FileViewerProps) {
+function FileViewer({
+  file,
+  wordWrap = true,
+  onError,
+  files,
+  onFileSelect,
+  onHideCommentsChange,
+  scrollToLine = null
+}: FileViewerProps) {
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [imageUrl, setImageUrl] = useState<string>('')
   const [pdfUrl, setPdfUrl] = useState<string>('')
   const [copySuccess, setCopySuccess] = useState(false)
   const [hideComments, setHideComments] = useState(false)
+  const fileContentRef = useRef<HTMLDivElement>(null)
   const fileType = getFileType(file.name)
   const displayContent = useMemo(() => {
+    let renderedContent = content
     if (fileType === 'tex' && hideComments) {
-      return stripLatexComments(content)
+      renderedContent = stripLatexComments(renderedContent)
     }
-    return content
-  }, [content, fileType, hideComments])
+    if (wordWrap) {
+      renderedContent = normalizeWrappedDisplayText(renderedContent)
+    }
+    return renderedContent
+  }, [content, fileType, hideComments, wordWrap])
+
+  useEffect(() => {
+    onHideCommentsChange?.(hideComments)
+  }, [hideComments, onHideCommentsChange])
+
+  const resizePrismLineNumbers = useCallback(() => {
+    const preElement = fileContentRef.current?.querySelector('pre.line-numbers')
+    if (!preElement) {
+      return
+    }
+
+    const prism = Prism as PrismWithLineNumbers
+    prism.plugins?.lineNumbers?.resize(preElement)
+  }, [])
+
+  const scrollToLineNumber = useCallback((lineNumber: number, behavior: ScrollBehavior = 'smooth'): boolean => {
+    if (lineNumber < 1) {
+      return false
+    }
+
+    const lineNumbersRows = fileContentRef.current?.querySelector('span.line-numbers-rows')
+    const lineElement = lineNumbersRows?.children[lineNumber - 1] as HTMLElement | undefined
+
+    if (!lineElement) {
+      return false
+    }
+
+    lineElement.scrollIntoView({ behavior, block: 'center' })
+    lineElement.classList.add('outline-jump-line')
+    window.setTimeout(() => {
+      lineElement.classList.remove('outline-jump-line')
+    }, 1600)
+    return true
+  }, [])
 
   useEffect(() => {
     setImageUrl('')
@@ -460,7 +507,18 @@ function FileViewer({ file, wordWrap = true, onError, files, onFileSelect }: Fil
       if (files && onFileSelect) {
         setupLatexInputLinker(files)
       }
-      Prism.highlightAll()
+      if (fileContentRef.current) {
+        Prism.highlightAllUnder(fileContentRef.current)
+      } else {
+        Prism.highlightAll()
+      }
+
+      const timers: number[] = []
+      const raf = window.requestAnimationFrame(() => {
+        resizePrismLineNumbers()
+        timers.push(window.setTimeout(resizePrismLineNumbers, 80))
+        timers.push(window.setTimeout(resizePrismLineNumbers, 220))
+      })
       
       // Add click handler for LaTeX links
       const handleLatexLinkClick = async (event: MouseEvent) => {
@@ -513,12 +571,7 @@ function FileViewer({ file, wordWrap = true, onError, files, onFileSelect }: Fil
                 const maxRetries = 2
 
                 const attemptScroll = () => {
-                  const lineNumbersRows = document.querySelector('span.line-numbers-rows')
-                  const lineElement = lineNumbersRows?.children[result.lineNumber]
-
-                  if (lineElement) {
-                    lineElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
-
+                  if (scrollToLineNumber(result.lineNumber + 1)) {
                     // Highlight all keyword tokens matching the label
                     const keywords = document.querySelectorAll('span.token.keyword')
                     keywords.forEach(el => {
@@ -548,12 +601,51 @@ function FileViewer({ file, wordWrap = true, onError, files, onFileSelect }: Fil
       }
 
       document.addEventListener('click', handleLatexLinkClick)
-      
+
       return () => {
+        window.cancelAnimationFrame(raf)
+        timers.forEach((timerId) => window.clearTimeout(timerId))
         document.removeEventListener('click', handleLatexLinkClick)
       }
     }
-  }, [displayContent, loading, wordWrap, files, onFileSelect, onError])
+  }, [displayContent, loading, wordWrap, files, onFileSelect, onError, scrollToLineNumber, resizePrismLineNumbers])
+
+  useEffect(() => {
+    if (!fileContentRef.current || fileType !== 'tex') {
+      return
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      resizePrismLineNumbers()
+    })
+
+    resizeObserver.observe(fileContentRef.current)
+
+    return () => {
+      resizeObserver.disconnect()
+    }
+  }, [fileType, resizePrismLineNumbers])
+
+  useEffect(() => {
+    if (!scrollToLine || fileType !== 'tex' || loading) {
+      return
+    }
+
+    let retries = 0
+    const maxRetries = 8
+    const attemptScroll = () => {
+      if (scrollToLineNumber(scrollToLine.lineNumber)) {
+        return
+      }
+
+      if (retries < maxRetries) {
+        retries++
+        window.setTimeout(attemptScroll, 80)
+      }
+    }
+
+    window.setTimeout(attemptScroll, 80)
+  }, [scrollToLine?.token, scrollToLine?.lineNumber, loading, fileType, displayContent, scrollToLine, scrollToLineNumber])
 
   useEffect(() => {
     if (copySuccess) {
@@ -777,7 +869,7 @@ function FileViewer({ file, wordWrap = true, onError, files, onFileSelect }: Fil
         </div>
         {renderFileActions()}
       </div>
-      <div className="file-content">
+      <div className="file-content" ref={fileContentRef}>
         {renderWithLineNumbers(displayContent)}
       </div>
     </div>

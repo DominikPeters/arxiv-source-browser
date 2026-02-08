@@ -463,7 +463,7 @@ button[data-tooltip]:focus-visible::after {
   }
 }
 
-.file-browser-container.collapsed .file-tree {
+.file-browser-container.collapsed .file-browser-panels {
   display: none;
 }
 
@@ -515,15 +515,39 @@ button[data-tooltip]:focus-visible::after {
   box-shadow: var(--shadow-md);
 }
 
+.file-browser-panels {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  overflow: hidden;
+}
+
+.file-browser-panels.with-outline .file-tree-panel {
+  flex: 1 1 62%;
+  min-height: 0;
+}
+
+.file-tree-panel {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .file-tree {
   flex: 1;
+  height: 100%;
   overflow: hidden;
   border-radius: 4px;
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
   padding: 3.2px 6.4px;
   min-height: 0;
-  margin-top: 0.5rem;
+  margin-top: 0;
 }
 
 /* Override react-arborist inline styles to use available space */
@@ -594,6 +618,101 @@ button[data-tooltip]:focus-visible::after {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
+}
+
+.file-outline-panel {
+  flex: 1 1 38%;
+  min-height: 0;
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.file-outline-title {
+  margin: 0;
+  padding: 0.5rem 0.625rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+}
+
+.file-outline-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.outline-item {
+  border: 0;
+  background: transparent;
+  border-radius: 3px;
+  padding: 0.28rem 0.42rem;
+  text-align: left;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.outline-item:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.outline-item.active {
+  background: rgb(180 83 9 / 0.16);
+  color: var(--text-primary);
+}
+
+.outline-item-title {
+  font-family: ui-monospace, 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-item-line {
+  font-family: ui-monospace, 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.outline-item.depth-1 {
+  padding-left: 1.15rem;
+}
+
+.outline-item.depth-2 {
+  padding-left: 1.9rem;
+}
+
+.outline-item.depth-3 {
+  padding-left: 2.65rem;
+}
+
+.outline-item.depth-4 {
+  padding-left: 3.4rem;
+}
+
+.outline-item.depth-5,
+.outline-item.depth-6 {
+  padding-left: 4.1rem;
 }
 
 .file-name {
@@ -765,6 +884,17 @@ button[data-tooltip]:focus-visible::after {
   color: var(--text-primary);
 }
 
+/* Keep Prism code lines and line-number gutter on identical metrics. */
+.file-content pre.line-numbers > code[class*="language-"] {
+  line-height: inherit;
+  font-size: inherit;
+}
+
+.file-content .line-numbers-rows > span.outline-jump-line {
+  background: rgb(180 83 9 / 0.24);
+  border-radius: 2px;
+}
+
 /* Settings modal styles */
 .settings-overlay {
   position: fixed;
@@ -882,7 +1012,7 @@ button[data-tooltip]:focus-visible::after {
 }
 
 /* For non-code content (legacy) */
-.file-content pre {
+.file-content pre:not(.line-numbers) {
   margin: 0;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 0.9rem;
@@ -995,7 +1125,16 @@ button[data-tooltip]:focus-visible::after {
   .file-tree {
     overflow-y: auto;
     max-height: 250px;
-    margin-top: 0.5rem;
+    margin-top: 0;
+  }
+
+  .file-browser-panels.with-outline {
+    max-height: 420px;
+  }
+
+  .file-browser-panels.with-outline .file-tree-panel,
+  .file-browser-panels.with-outline .file-outline-panel {
+    min-height: 120px;
   }
   
   .header-content {
@@ -1121,6 +1260,15 @@ button[data-tooltip]:focus-visible::after {
   .file-tree {
     max-height: 150px;
     overflow-y: auto;
+  }
+
+  .file-browser-panels.with-outline {
+    max-height: 330px;
+  }
+
+  .file-browser-panels.with-outline .file-tree-panel,
+  .file-browser-panels.with-outline .file-outline-panel {
+    min-height: 90px;
   }
   
   .app-header {

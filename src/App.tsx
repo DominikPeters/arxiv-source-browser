@@ -6,14 +6,21 @@ import FileViewer from './components/FileViewer'
 import Settings from './components/Settings'
 import Toast from './components/Toast'
 import type { FileEntry } from './types'
-import { parseURL, buildURL, extractArxivId } from './types'
+import { parseURL, buildURL, extractArxivId, getFileType } from './types'
 import { BASE_URL, API_URL } from './config'
 import { Settings as SettingsIcon, Loader2 } from 'lucide-react'
+import { buildVisibleLineMapAfterCommentStrip } from './latexComments'
+import { parseTexOutline, type TexOutlineEntry } from './texOutline'
 
 interface ExamplePaper {
   id: string
   title: string
   authors: string
+}
+
+interface OutlineJumpRequest {
+  lineNumber: number
+  token: number
 }
 
 const EXAMPLE_PAPERS: ExamplePaper[] = [
@@ -82,6 +89,10 @@ function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [paperId, setPaperId] = useState('')
   const [fileBrowserCollapsed, setFileBrowserCollapsed] = useState(false)
+  const [hideCommentsInViewer, setHideCommentsInViewer] = useState(false)
+  const [texOutline, setTexOutline] = useState<TexOutlineEntry[]>([])
+  const [selectedOutlineLine, setSelectedOutlineLine] = useState<number | null>(null)
+  const [outlineJumpRequest, setOutlineJumpRequest] = useState<OutlineJumpRequest | null>(null)
   const fileBrowserRef = useRef<FileBrowserRef>(null)
 
   // Auto-uncollapse file browser when screen size increases above mobile breakpoint
@@ -184,6 +195,76 @@ function App() {
     }
   }, [paperId, selectedFile])
 
+  useEffect(() => {
+    let cancelled = false
+
+    const loadOutline = async () => {
+      if (!selectedFile || getFileType(selectedFile.name) !== 'tex') {
+        setTexOutline([])
+        setSelectedOutlineLine(null)
+        return
+      }
+
+      try {
+        let textContent = selectedFile.content
+        if (textContent === null) {
+          textContent = await selectedFile.zipFile.async('text')
+          selectedFile.content = textContent
+        }
+
+        const { lineCount, entries } = parseTexOutline(textContent)
+        if (cancelled) {
+          return
+        }
+
+        if (lineCount < 150 || entries.length <= 1) {
+          setTexOutline([])
+          setSelectedOutlineLine(null)
+          return
+        }
+
+        if (!hideCommentsInViewer) {
+          setTexOutline(entries)
+          return
+        }
+
+        const lineMap = buildVisibleLineMapAfterCommentStrip(textContent)
+        const mappedEntries = entries
+          .map((entry) => {
+            const mappedLine = lineMap[entry.lineNumber - 1]
+            return {
+              ...entry,
+              lineNumber: mappedLine ?? entry.lineNumber
+            }
+          })
+          .filter((entry) => entry.lineNumber > 0)
+
+        setTexOutline(mappedEntries)
+      } catch (error) {
+        console.error('Error building TeX outline:', error)
+        if (!cancelled) {
+          setTexOutline([])
+          setSelectedOutlineLine(null)
+        }
+      }
+    }
+
+    loadOutline()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedFile, hideCommentsInViewer])
+
+  useEffect(() => {
+    setHideCommentsInViewer(false)
+  }, [selectedFile?.path])
+
+  useEffect(() => {
+    setSelectedOutlineLine(null)
+    setOutlineJumpRequest(null)
+  }, [selectedFile?.path, hideCommentsInViewer])
+
   const handleArxivSubmit = async (url: string) => {
     setLoading(true)
     try {
@@ -259,6 +340,14 @@ function App() {
       setFileBrowserCollapsed(true)
     }
   }, [paperId])
+
+  const handleOutlineSelect = useCallback((lineNumber: number) => {
+    setSelectedOutlineLine(lineNumber)
+    setOutlineJumpRequest((prev) => ({
+      lineNumber,
+      token: (prev?.token ?? 0) + 1
+    }))
+  }, [])
 
   const handleToggleFileBrowser = () => {
     setFileBrowserCollapsed(!fileBrowserCollapsed)
@@ -379,6 +468,9 @@ function App() {
               files={files} 
               onFileSelect={handleFileSelect} 
               selectedFile={selectedFile} 
+              texOutline={texOutline}
+              selectedOutlineLine={selectedOutlineLine}
+              onOutlineSelect={handleOutlineSelect}
               onDownloadZip={handleDownloadZip}
               isCollapsed={fileBrowserCollapsed}
               onToggleCollapse={handleToggleFileBrowser}
@@ -392,6 +484,8 @@ function App() {
                 onError={setToastMessage}
                 files={files}
                 onFileSelect={handleFileSelect}
+                onHideCommentsChange={setHideCommentsInViewer}
+                scrollToLine={outlineJumpRequest}
               />
             ) : (
               <div className="no-file-selected">
