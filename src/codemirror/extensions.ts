@@ -1,6 +1,7 @@
 import { keymap, lineNumbers, EditorView, Decoration, type DecorationSet } from '@codemirror/view'
-import { defaultHighlightStyle, foldGutter, foldKeymap, syntaxHighlighting } from '@codemirror/language'
+import { defaultHighlightStyle, HighlightStyle, foldGutter, foldKeymap, syntaxHighlighting, type TagStyle } from '@codemirror/language'
 import { Compartment, EditorState, StateEffect, StateField, type Extension } from '@codemirror/state'
+import { tags } from '@lezer/highlight'
 import type { CodeViewerMode } from './language'
 import { getCodeViewerLanguageExtension } from './language'
 import { codeViewerTheme } from './theme'
@@ -63,6 +64,33 @@ const jumpLineDecorationField = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field),
 })
 
+type HighlightStyleWithSpecs = typeof defaultHighlightStyle & {
+  specs?: readonly TagStyle[]
+}
+
+const defaultHighlightSpecs = (defaultHighlightStyle as HighlightStyleWithSpecs).specs
+
+function hasHeadingTag(tagSpec: TagStyle['tag']): boolean {
+  if (Array.isArray(tagSpec)) {
+    return tagSpec.includes(tags.heading)
+  }
+  return tagSpec === tags.heading
+}
+
+const codeViewerHighlightStyle = defaultHighlightSpecs
+  ? HighlightStyle.define(
+      defaultHighlightSpecs.map((spec) => {
+        if (!hasHeadingTag(spec.tag) || spec.textDecoration === undefined) {
+          return spec
+        }
+
+        const rest = { ...spec }
+        delete rest.textDecoration
+        return rest
+      })
+    )
+  : defaultHighlightStyle
+
 function readOnlyExtension(readOnly: boolean): Extension {
   return [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]
 }
@@ -101,7 +129,7 @@ export function createCodeViewerExtensionController(
   const extensions: Extension[] = [
     lineNumbers(),
     codeViewerTheme,
-    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    syntaxHighlighting(codeViewerHighlightStyle),
     jumpLineDecorationField,
     languageCompartment.of(initial.language),
     wrappingCompartment.of(initial.wrapping),

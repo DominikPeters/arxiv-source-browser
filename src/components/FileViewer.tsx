@@ -98,6 +98,7 @@ interface FileViewerProps {
   files?: FileEntry[]
   onFileSelect?: (file: FileEntry) => void
   onHideCommentsChange?: (hideComments: boolean) => void
+  onVisibleLineChange?: (lineNumber: number) => void
   scrollToLine?: { lineNumber: number; token: number } | null
 }
 
@@ -108,6 +109,7 @@ function FileViewer({
   files,
   onFileSelect,
   onHideCommentsChange,
+  onVisibleLineChange,
   scrollToLine = null,
 }: FileViewerProps) {
   const [content, setContent] = useState<string>('')
@@ -122,6 +124,8 @@ function FileViewer({
   const editorViewRef = useRef<EditorView | null>(null)
   const extensionControllerRef = useRef<CodeViewerExtensionController | null>(null)
   const clearJumpHighlightTimerRef = useRef<number | null>(null)
+  const visibleLineRafRef = useRef<number | null>(null)
+  const lastVisibleLineRef = useRef<number | null>(null)
 
   const displayContent = useMemo(() => {
     if (fileType === 'tex' && hideComments) {
@@ -147,13 +151,63 @@ function FileViewer({
       clearJumpHighlightTimerRef.current = null
     }
 
+    if (visibleLineRafRef.current !== null) {
+      window.cancelAnimationFrame(visibleLineRafRef.current)
+      visibleLineRafRef.current = null
+    }
+
     if (editorViewRef.current) {
       editorViewRef.current.destroy()
       editorViewRef.current = null
     }
 
+    lastVisibleLineRef.current = null
     extensionControllerRef.current = null
   }, [])
+
+  const getTopVisibleLineNumber = useCallback((editorView: EditorView): number => {
+    const scrollSpyAnchorRatio = 0.33
+    const blocks = editorView.viewportLineBlocks
+    if (blocks.length > 0) {
+      const anchorIndex = Math.min(
+        blocks.length - 1,
+        Math.max(0, Math.floor((blocks.length - 1) * scrollSpyAnchorRatio))
+      )
+      return editorView.state.doc.lineAt(blocks[anchorIndex].from).number
+    }
+
+    const block = editorView.lineBlockAtHeight(editorView.scrollDOM.scrollTop + editorView.documentTop + 1)
+    return editorView.state.doc.lineAt(block.from).number
+  }, [])
+
+  const reportVisibleLine = useCallback((editorView: EditorView, force = false) => {
+    if (!onVisibleLineChange || fileType !== 'tex') {
+      return
+    }
+
+    const lineNumber = getTopVisibleLineNumber(editorView)
+    if (!force && lastVisibleLineRef.current === lineNumber) {
+      return
+    }
+
+    lastVisibleLineRef.current = lineNumber
+    onVisibleLineChange(lineNumber)
+  }, [fileType, getTopVisibleLineNumber, onVisibleLineChange])
+
+  const scheduleVisibleLineReport = useCallback((editorView: EditorView, force = false) => {
+    if (!onVisibleLineChange || fileType !== 'tex') {
+      return
+    }
+
+    if (visibleLineRafRef.current !== null) {
+      return
+    }
+
+    visibleLineRafRef.current = window.requestAnimationFrame(() => {
+      visibleLineRafRef.current = null
+      reportVisibleLine(editorView, force)
+    })
+  }, [fileType, onVisibleLineChange, reportVisibleLine])
 
   const scrollToLineNumber = useCallback((lineNumber: number, behavior: ScrollBehavior = 'smooth'): boolean => {
     const editorView = editorViewRef.current
@@ -164,17 +218,44 @@ function FileViewer({
     }
 
     const line = editorView.state.doc.line(lineNumber)
+    const targetRatioFromTop = 0.33
+    const positionLine = (scrollBehavior: ScrollBehavior): boolean => {
+      const scroller = editorView.scrollDOM
+      const coords = editorView.coordsAtPos(line.from)
+      if (!coords) {
+        return false
+      }
+
+      const scrollerRect = scroller.getBoundingClientRect()
+      const desiredTopOffset = scroller.clientHeight * targetRatioFromTop
+      const targetTop = scroller.scrollTop + (coords.top - scrollerRect.top) - desiredTopOffset
+      const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+      const clampedTop = Math.min(maxTop, Math.max(0, targetTop))
+      scroller.scrollTo({ top: clampedTop, behavior: scrollBehavior })
+      return true
+    }
+
     editorView.dispatch({
       selection: { anchor: line.from },
-      scrollIntoView: true,
     })
 
-    const block = editorView.lineBlockAt(line.from)
-    const scroller = editorView.scrollDOM
-    const targetTop = Math.max(0, block.top - scroller.clientHeight / 2)
-    scroller.scrollTo({ top: targetTop, behavior })
+    if (!positionLine(behavior)) {
+      const scrollerHeight = editorView.scrollDOM.clientHeight
+      editorView.dispatch({
+        effects: EditorView.scrollIntoView(line.from, {
+          y: 'start',
+          yMargin: Math.max(5, Math.floor(scrollerHeight * targetRatioFromTop)),
+        }),
+      })
+    }
+    window.setTimeout(() => {
+      if (editorViewRef.current === editorView) {
+        positionLine('auto')
+      }
+    }, 70)
 
     extensionController.setJumpLine(editorView, lineNumber)
+    scheduleVisibleLineReport(editorView, true)
     if (clearJumpHighlightTimerRef.current !== null) {
       window.clearTimeout(clearJumpHighlightTimerRef.current)
     }
@@ -186,7 +267,7 @@ function FileViewer({
     }, 1600)
 
     return true
-  }, [])
+  }, [scheduleVisibleLineReport])
 
   const handleLatexLinkClick = useCallback(
     async (link: LatexLinkSpan) => {
@@ -245,8 +326,13 @@ function FileViewer({
       createLatexLinkClickExtension((link) => {
         void handleLatexLinkClick(link)
       }),
+      EditorView.updateListener.of((update) => {
+        if (update.viewportChanged || update.docChanged) {
+          scheduleVisibleLineReport(update.view)
+        }
+      }),
     ]
-  }, [fileType, handleLatexLinkClick])
+  }, [fileType, handleLatexLinkClick, scheduleVisibleLineReport])
 
   useEffect(() => {
     onHideCommentsChange?.(hideComments)
@@ -337,6 +423,24 @@ function FileViewer({
       destroyEditor()
     }
   }, [destroyEditor])
+
+  useEffect(() => {
+    const editorView = editorViewRef.current
+    if (!editorView || fileType !== 'tex' || !onVisibleLineChange) {
+      return
+    }
+
+    const handleScroll = () => {
+      scheduleVisibleLineReport(editorView)
+    }
+
+    editorView.scrollDOM.addEventListener('scroll', handleScroll, { passive: true })
+    scheduleVisibleLineReport(editorView, true)
+
+    return () => {
+      editorView.scrollDOM.removeEventListener('scroll', handleScroll)
+    }
+  }, [displayContent, fileType, onVisibleLineChange, scheduleVisibleLineReport])
 
   useEffect(() => {
     if (fileType === 'image' || fileType === 'pdf') {

@@ -23,6 +23,32 @@ interface OutlineJumpRequest {
   token: number
 }
 
+function findNearestOutlineLineAtOrAbove(lineNumber: number, outline: TexOutlineEntry[]): number | null {
+  if (outline.length === 0) {
+    return null
+  }
+
+  let left = 0
+  let right = outline.length - 1
+  let bestIndex = -1
+
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2)
+    if (outline[mid].lineNumber <= lineNumber) {
+      bestIndex = mid
+      left = mid + 1
+    } else {
+      right = mid - 1
+    }
+  }
+
+  if (bestIndex >= 0) {
+    return outline[bestIndex].lineNumber
+  }
+
+  return outline[0].lineNumber
+}
+
 const EXAMPLE_PAPERS: ExamplePaper[] = [
   {
     id: '1706.03762',
@@ -94,6 +120,22 @@ function App() {
   const [selectedOutlineLine, setSelectedOutlineLine] = useState<number | null>(null)
   const [outlineJumpRequest, setOutlineJumpRequest] = useState<OutlineJumpRequest | null>(null)
   const fileBrowserRef = useRef<FileBrowserRef>(null)
+  const outlineSelectionLockUntilRef = useRef(0)
+  const outlineSelectionLockTimerRef = useRef<number | null>(null)
+
+  const lockOutlineSelectionFromScroll = useCallback((durationMs = 1000) => {
+    const unlockAt = Date.now() + durationMs
+    outlineSelectionLockUntilRef.current = unlockAt
+
+    if (outlineSelectionLockTimerRef.current !== null) {
+      window.clearTimeout(outlineSelectionLockTimerRef.current)
+    }
+
+    outlineSelectionLockTimerRef.current = window.setTimeout(() => {
+      outlineSelectionLockUntilRef.current = 0
+      outlineSelectionLockTimerRef.current = null
+    }, durationMs)
+  }, [])
 
   // Auto-uncollapse file browser when screen size increases above mobile breakpoint
   useEffect(() => {
@@ -263,7 +305,20 @@ function App() {
   useEffect(() => {
     setSelectedOutlineLine(null)
     setOutlineJumpRequest(null)
+    outlineSelectionLockUntilRef.current = 0
+    if (outlineSelectionLockTimerRef.current !== null) {
+      window.clearTimeout(outlineSelectionLockTimerRef.current)
+      outlineSelectionLockTimerRef.current = null
+    }
   }, [selectedFile?.path, hideCommentsInViewer])
+
+  useEffect(() => {
+    return () => {
+      if (outlineSelectionLockTimerRef.current !== null) {
+        window.clearTimeout(outlineSelectionLockTimerRef.current)
+      }
+    }
+  }, [])
 
   const handleArxivSubmit = async (url: string) => {
     setLoading(true)
@@ -342,12 +397,26 @@ function App() {
   }, [paperId])
 
   const handleOutlineSelect = useCallback((lineNumber: number) => {
+    lockOutlineSelectionFromScroll()
     setSelectedOutlineLine(lineNumber)
     setOutlineJumpRequest((prev) => ({
       lineNumber,
       token: (prev?.token ?? 0) + 1
     }))
-  }, [])
+  }, [lockOutlineSelectionFromScroll])
+
+  const handleViewerVisibleLineChange = useCallback((lineNumber: number) => {
+    if (!selectedFile || getFileType(selectedFile.name) !== 'tex') {
+      return
+    }
+
+    if (Date.now() < outlineSelectionLockUntilRef.current) {
+      return
+    }
+
+    const activeOutlineLine = findNearestOutlineLineAtOrAbove(lineNumber, texOutline)
+    setSelectedOutlineLine((prev) => (prev === activeOutlineLine ? prev : activeOutlineLine))
+  }, [selectedFile, texOutline])
 
   const handleToggleFileBrowser = () => {
     setFileBrowserCollapsed(!fileBrowserCollapsed)
@@ -485,6 +554,7 @@ function App() {
                 files={files}
                 onFileSelect={handleFileSelect}
                 onHideCommentsChange={setHideCommentsInViewer}
+                onVisibleLineChange={handleViewerVisibleLineChange}
                 scrollToLine={outlineJumpRequest}
               />
             ) : (
