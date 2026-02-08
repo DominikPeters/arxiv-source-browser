@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { Download, Copy, Check, Percent } from 'lucide-react'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
@@ -361,7 +361,7 @@ function stripLatexComments(text: string): string {
   return outputLines.join('\n')
 }
 
-export default function FileViewer({ file, wordWrap = true, onError, files, onFileSelect }: FileViewerProps) {
+function FileViewer({ file, wordWrap = true, onError, files, onFileSelect }: FileViewerProps) {
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [imageUrl, setImageUrl] = useState<string>('')
@@ -783,3 +783,5 @@ export default function FileViewer({ file, wordWrap = true, onError, files, onFi
     </div>
   )
 }
+
+export default memo(FileViewer)

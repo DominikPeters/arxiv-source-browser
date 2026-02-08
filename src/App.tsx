@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import './App.css'
 import ArxivInput from './components/ArxivInput'
 import FileBrowser, { type FileBrowserRef } from './components/FileBrowser'
@@ -245,7 +245,7 @@ function App() {
     }
   }
 
-  const handleFileSelect = (file: FileEntry) => {
+  const handleFileSelect = useCallback((file: FileEntry) => {
     setSelectedFile(file)
     
     // Update URL with file path (cosmetic update after interface change)
@@ -258,7 +258,7 @@ function App() {
     if (window.innerWidth <= 768) {
       setFileBrowserCollapsed(true)
     }
-  }
+  }, [paperId])
 
   const handleToggleFileBrowser = () => {
     setFileBrowserCollapsed(!fileBrowserCollapsed)
