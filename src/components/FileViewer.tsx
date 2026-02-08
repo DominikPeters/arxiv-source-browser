@@ -1,38 +1,29 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Copy, Check, Percent } from 'lucide-react'
+import { EditorState } from '@codemirror/state'
+import { EditorView } from '@codemirror/view'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
-import { normalizeWrappedDisplayText, stripLatexComments } from '../latexComments'
-import Prism from 'prismjs'
-import 'prismjs/themes/prism.css'
-import 'prismjs/components/prism-latex'
-import 'prismjs-bibtex'
-import 'prismjs/plugins/line-numbers/prism-line-numbers.js'
-import 'prismjs/plugins/line-numbers/prism-line-numbers.css'
+import { stripLatexComments } from '../latexComments'
+import {
+  createCodeViewerExtensionController,
+  type CodeViewerConfig,
+  type CodeViewerExtensionController,
+} from '../codemirror/extensions'
+import type { CodeViewerMode } from '../codemirror/language'
+import {
+  createLatexLinkClickExtension,
+  createLatexLinkDecorationsExtension,
+  type LatexLinkSpan,
+} from '../codemirror/latexLinks'
 
-// Override the default LaTeX comment rule so that the percent sign macro (\%)
-// isn't treated as the start of a comment.
-Prism.languages.latex.comment = {
-  pattern: /(?<!\\)%.*$/m,
-}
-
-// Ensure Prism is available globally for plugins
-if (typeof window !== 'undefined') {
-  ;(window as Window & { Prism?: typeof Prism }).Prism = Prism
-}
-
-let latexInputLinkerInstalled = false
 let currentFiles: FileEntry[] = []
-const inputLinkMap: Map<string, { file: FileEntry; inputPath: string; linkType: 'input' | 'graphics' }> = new Map()
-const refLinkMap: Map<string, { command: string; label: string }> = new Map()
 
 async function findLabelInFiles(label: string): Promise<{ file: FileEntry; lineNumber: number } | null> {
-  // Search through all .tex files for \label{labelname}
-  const labelPattern = new RegExp(`\\\\label\\{${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}`)
+  const labelPattern = new RegExp(`\\\\label\\{${label.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&')}\\}`)
 
   for (const file of currentFiles) {
     const fileName = file.name.toLowerCase()
-    // Only search in .tex files
     if (!fileName.endsWith('.tex')) {
       continue
     }
@@ -54,55 +45,26 @@ async function findLabelInFiles(label: string): Promise<{ file: FileEntry; lineN
   return null
 }
 
-function setupLatexInputLinker(files: FileEntry[]) {
-  currentFiles = files
-  inputLinkMap.clear()
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.pdf', '.eps', '.svg', '.gif']
 
-  if (latexInputLinkerInstalled) {
-    return
+function findFileByLatexPath(inputPath: string, isImage: boolean): FileEntry | null {
+  let cleanPath = inputPath.trim()
+  if (cleanPath.startsWith('./')) {
+    cleanPath = cleanPath.substring(2)
   }
-  latexInputLinkerInstalled = true
 
-  function findFileByPath(inputPath: string, isImage = false): FileEntry | null {
-    let cleanPath = inputPath.trim()
+  if (isImage) {
+    const hasExtension = IMAGE_EXTENSIONS.some((ext) => cleanPath.toLowerCase().endsWith(ext))
+    const pathsToTry = hasExtension ? [cleanPath] : IMAGE_EXTENSIONS.map((ext) => cleanPath + ext)
 
-    // Remove leading ./ if present
-    if (cleanPath.startsWith('./')) {
-      cleanPath = cleanPath.substring(2)
-    }
-
-    if (isImage) {
-      // For images, try common extensions if no extension is provided
-      const imageExtensions = ['.png', '.jpg', '.jpeg', '.pdf', '.eps', '.svg', '.gif']
-      const hasExtension = imageExtensions.some(ext => cleanPath.toLowerCase().endsWith(ext))
-
-      const pathsToTry = hasExtension ? [cleanPath] : imageExtensions.map(ext => cleanPath + ext)
-
-      for (const pathToTry of pathsToTry) {
-        for (const file of currentFiles) {
-          if (file.name === pathToTry || file.path === pathToTry) {
-            return file
-          }
-
-          const fileName = file.name.split('/').pop() || ''
-          if (fileName === pathToTry) {
-            return file
-          }
-        }
-      }
-    } else {
-      // For .tex files, add .tex extension if missing
-      if (!cleanPath.endsWith('.tex')) {
-        cleanPath += '.tex'
-      }
-
+    for (const pathToTry of pathsToTry) {
       for (const file of currentFiles) {
-        if (file.name === cleanPath || file.path === cleanPath) {
+        if (file.name === pathToTry || file.path === pathToTry) {
           return file
         }
 
         const fileName = file.name.split('/').pop() || ''
-        if (fileName === cleanPath) {
+        if (fileName === pathToTry) {
           return file
         }
       }
@@ -111,236 +73,22 @@ function setupLatexInputLinker(files: FileEntry[]) {
     return null
   }
 
-  Prism.hooks.add('after-tokenize', (env) => {
-    if (env.language !== 'latex') {
-      return
+  if (!cleanPath.endsWith('.tex')) {
+    cleanPath += '.tex'
+  }
+
+  for (const file of currentFiles) {
+    if (file.name === cleanPath || file.path === cleanPath) {
+      return file
     }
 
-    function tokenToText(token: string | object): string {
-      if (typeof token === 'string') {
-        return token
-      }
-
-      if (!token || typeof token !== 'object' || !('content' in token)) {
-        return ''
-      }
-
-      const content = (token as { content?: unknown }).content
-      if (typeof content === 'string') {
-        return content
-      }
-      if (Array.isArray(content)) {
-        return content.map((nested) => tokenToText(nested as string | object)).join('')
-      }
-      if (content && typeof content === 'object') {
-        return tokenToText(content as object)
-      }
-
-      return ''
+    const fileName = file.name.split('/').pop() || ''
+    if (fileName === cleanPath) {
+      return file
     }
+  }
 
-    function processTokens(tokens: (string | object)[]): void {
-      for (let i = 0; i < tokens.length - 2; i++) {
-        const token1 = tokens[i]
-        const token2 = tokens[i + 1]
-
-        // Look for pattern: \input + { + filename + }
-        if (token1 && typeof token1 === 'object' && 'type' in token1 && 'content' in token1 &&
-            token1.type === 'function' && token1.content === '\\input' &&
-            token2 && typeof token2 === 'object' && 'type' in token2 && 'content' in token2 &&
-            token2.type === 'punctuation' && token2.content === '{') {
-
-          // Find the closing brace and collect content
-          let filename = ''
-          let endIndex = i + 3
-          let foundClosing = false
-
-          for (let j = i + 2; j < tokens.length; j++) {
-            const token = tokens[j]
-            if (typeof token === 'string') {
-              filename += token
-            } else if (token && typeof token === 'object' && 'content' in token) {
-              const tokenObj = token as { type?: string; content?: string }
-              if (tokenObj.type === 'punctuation' && tokenObj.content === '}') {
-                foundClosing = true
-                endIndex = j
-                break
-              } else {
-                filename += tokenObj.content || ''
-              }
-            }
-          }
-
-          if (foundClosing) {
-            const linkedFile = findFileByPath(filename)
-
-            if (linkedFile) {
-              // Preserve the original token text so line breaks stay intact.
-              const content = tokens
-                .slice(i, endIndex + 1)
-                .map((token) => tokenToText(token))
-                .join('')
-              inputLinkMap.set(content, {
-                file: linkedFile,
-                inputPath: filename,
-                linkType: 'input'
-              })
-
-              // Replace all tokens from i to endIndex with a single link token
-              const linkToken = new Prism.Token('latex-input-link', content, undefined, content)
-
-              tokens.splice(i, endIndex - i + 1, linkToken)
-            }
-          }
-        }
-
-        // Look for pattern: \includegraphics + [optional parameters] + { + filename + }
-        if (token1 && typeof token1 === 'object' && 'type' in token1 && 'content' in token1 &&
-            token1.type === 'function' && token1.content === '\\includegraphics') {
-
-          // Search for the first '{' token after \includegraphics (skip optional [...] parameters)
-          let openBraceIndex = -1
-          for (let j = i + 1; j < tokens.length; j++) {
-            const token = tokens[j]
-            if (token && typeof token === 'object' && 'type' in token && 'content' in token) {
-              const tokenObj = token as { type?: string; content?: string }
-              if (tokenObj.type === 'punctuation' && tokenObj.content === '{') {
-                openBraceIndex = j
-                break
-              }
-            }
-          }
-
-          if (openBraceIndex !== -1) {
-            // Find the closing brace and collect content
-            let filename = ''
-            let endIndex = openBraceIndex + 2
-            let foundClosing = false
-
-            for (let j = openBraceIndex + 1; j < tokens.length; j++) {
-              const token = tokens[j]
-              if (typeof token === 'string') {
-                filename += token
-              } else if (token && typeof token === 'object' && 'content' in token) {
-                const tokenObj = token as { type?: string; content?: string }
-                if (tokenObj.type === 'punctuation' && tokenObj.content === '}') {
-                  foundClosing = true
-                  endIndex = j
-                  break
-                } else {
-                  filename += tokenObj.content || ''
-                }
-              }
-            }
-
-            if (foundClosing) {
-              const linkedFile = findFileByPath(filename, true)
-
-              if (linkedFile) {
-                // Preserve the original token text so line breaks stay intact.
-                const content = tokens
-                  .slice(i, endIndex + 1)
-                  .map((token) => tokenToText(token))
-                  .join('')
-                inputLinkMap.set(content, {
-                  file: linkedFile,
-                  inputPath: filename,
-                  linkType: 'graphics'
-                })
-
-                // Replace all tokens from i to endIndex with a single link token
-                const linkToken = new Prism.Token('latex-graphics-link', content, undefined, content)
-
-                tokens.splice(i, endIndex - i + 1, linkToken)
-              }
-            }
-          }
-        }
-
-        // Look for reference commands: \ref, \Cref, \cref, \eqref, \pageref, \autoref
-        const refCommands = ['\\ref', '\\Cref', '\\cref', '\\eqref', '\\pageref', '\\autoref']
-        if (token1 && typeof token1 === 'object' && 'type' in token1 && 'content' in token1 &&
-            token1.type === 'function' &&
-            refCommands.includes((token1 as { content?: string }).content || '') &&
-            token2 && typeof token2 === 'object' && 'type' in token2 && 'content' in token2 &&
-            token2.type === 'punctuation' && token2.content === '{') {
-
-          const command = (token1 as { content?: string }).content || ''
-
-          // Find the closing brace and collect label
-          let label = ''
-          let endIndex = i + 3
-          let foundClosing = false
-
-          for (let j = i + 2; j < tokens.length; j++) {
-            const token = tokens[j]
-            if (typeof token === 'string') {
-              label += token
-            } else if (token && typeof token === 'object' && 'content' in token) {
-              const tokenObj = token as { type?: string; content?: string }
-              if (tokenObj.type === 'punctuation' && tokenObj.content === '}') {
-                foundClosing = true
-                endIndex = j
-                break
-              } else {
-                label += tokenObj.content || ''
-              }
-            }
-          }
-
-          if (foundClosing && label.trim()) {
-            // Store the mapping for later use in wrap hook
-            const content = tokens
-              .slice(i, endIndex + 1)
-              .map((token) => tokenToText(token))
-              .join('')
-            refLinkMap.set(content, { command, label: label.trim() })
-
-            // Replace all tokens from i to endIndex with a single link token
-            const linkToken = new Prism.Token('latex-ref-link', content, undefined, content)
-
-            tokens.splice(i, endIndex - i + 1, linkToken)
-          }
-        }
-
-        // Recursively process nested content
-        if (token1 && typeof token1 === 'object' && 'content' in token1 &&
-            Array.isArray((token1 as { content: unknown }).content)) {
-          processTokens((token1 as { content: (string | object)[] }).content)
-        }
-      }
-    }
-
-    processTokens(env.tokens)
-  })
-
-  Prism.hooks.add('wrap', (env) => {
-    if (env.type === 'latex-input-link' || env.type === 'latex-graphics-link') {
-      const linkInfo = inputLinkMap.get(env.content)
-
-      if (linkInfo) {
-        const { inputPath, linkType } = linkInfo
-
-        env.tag = 'span'
-        env.attributes.class = env.type === 'latex-input-link' ? 'latex-input-link' : 'latex-graphics-link'
-        env.attributes.title = `Click to open: ${inputPath}`
-        env.attributes['data-input-path'] = inputPath
-        env.attributes['data-link-type'] = linkType
-      }
-    } else if (env.type === 'latex-ref-link') {
-      const refInfo = refLinkMap.get(env.content)
-
-      if (refInfo) {
-        const label = refInfo.label
-
-        env.tag = 'span'
-        env.attributes.class = 'latex-ref-link'
-        env.attributes.title = `Click to go to: ${label}`
-        env.attributes['data-label'] = label
-        env.attributes['data-ref-type'] = refInfo.command
-      }
-    }
-  })
+  return null
 }
 
 interface FileViewerProps {
@@ -353,14 +101,6 @@ interface FileViewerProps {
   scrollToLine?: { lineNumber: number; token: number } | null
 }
 
-type PrismWithLineNumbers = typeof Prism & {
-  plugins?: {
-    lineNumbers?: {
-      resize: (element: Element) => void
-    }
-  }
-}
-
 function FileViewer({
   file,
   wordWrap = true,
@@ -368,7 +108,7 @@ function FileViewer({
   files,
   onFileSelect,
   onHideCommentsChange,
-  scrollToLine = null
+  scrollToLine = null,
 }: FileViewerProps) {
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(false)
@@ -376,67 +116,158 @@ function FileViewer({
   const [pdfUrl, setPdfUrl] = useState<string>('')
   const [copySuccess, setCopySuccess] = useState(false)
   const [hideComments, setHideComments] = useState(false)
-  const fileContentRef = useRef<HTMLDivElement>(null)
+
   const fileType = getFileType(file.name)
+  const editorContainerRef = useRef<HTMLDivElement>(null)
+  const editorViewRef = useRef<EditorView | null>(null)
+  const extensionControllerRef = useRef<CodeViewerExtensionController | null>(null)
+  const clearJumpHighlightTimerRef = useRef<number | null>(null)
+
   const displayContent = useMemo(() => {
-    let renderedContent = content
     if (fileType === 'tex' && hideComments) {
-      renderedContent = stripLatexComments(renderedContent)
+      return stripLatexComments(content)
     }
-    if (wordWrap) {
-      renderedContent = normalizeWrappedDisplayText(renderedContent)
+    return content
+  }, [content, fileType, hideComments])
+
+  const getCodeViewerMode = useCallback((currentFileType: ReturnType<typeof getFileType>): CodeViewerMode => {
+    switch (currentFileType) {
+      case 'tex':
+        return 'tex'
+      case 'bib':
+        return 'bib'
+      default:
+        return 'plain'
     }
-    return renderedContent
-  }, [content, fileType, hideComments, wordWrap])
+  }, [])
+
+  const destroyEditor = useCallback(() => {
+    if (clearJumpHighlightTimerRef.current !== null) {
+      window.clearTimeout(clearJumpHighlightTimerRef.current)
+      clearJumpHighlightTimerRef.current = null
+    }
+
+    if (editorViewRef.current) {
+      editorViewRef.current.destroy()
+      editorViewRef.current = null
+    }
+
+    extensionControllerRef.current = null
+  }, [])
+
+  const scrollToLineNumber = useCallback((lineNumber: number, behavior: ScrollBehavior = 'smooth'): boolean => {
+    const editorView = editorViewRef.current
+    const extensionController = extensionControllerRef.current
+
+    if (!editorView || !extensionController || lineNumber < 1 || lineNumber > editorView.state.doc.lines) {
+      return false
+    }
+
+    const line = editorView.state.doc.line(lineNumber)
+    editorView.dispatch({
+      selection: { anchor: line.from },
+      scrollIntoView: true,
+    })
+
+    const block = editorView.lineBlockAt(line.from)
+    const scroller = editorView.scrollDOM
+    const targetTop = Math.max(0, block.top - scroller.clientHeight / 2)
+    scroller.scrollTo({ top: targetTop, behavior })
+
+    extensionController.setJumpLine(editorView, lineNumber)
+    if (clearJumpHighlightTimerRef.current !== null) {
+      window.clearTimeout(clearJumpHighlightTimerRef.current)
+    }
+
+    clearJumpHighlightTimerRef.current = window.setTimeout(() => {
+      if (editorViewRef.current && extensionControllerRef.current) {
+        extensionControllerRef.current.setJumpLine(editorViewRef.current, null)
+      }
+    }, 1600)
+
+    return true
+  }, [])
+
+  const handleLatexLinkClick = useCallback(
+    async (link: LatexLinkSpan) => {
+      if (!files || !onFileSelect) {
+        return
+      }
+
+      if (link.kind === 'input' || link.kind === 'graphics') {
+        const linkedFile = findFileByLatexPath(link.payload, link.kind === 'graphics')
+        if (linkedFile) {
+          onFileSelect(linkedFile)
+        }
+        return
+      }
+
+      if (link.kind === 'ref') {
+        try {
+          const result = await findLabelInFiles(link.payload)
+          if (!result) {
+            onError?.(`Label '${link.payload}' not found`)
+            return
+          }
+
+          onFileSelect(result.file)
+
+          let retries = 0
+          const maxRetries = 2
+          const attemptScroll = () => {
+            if (scrollToLineNumber(result.lineNumber + 1)) {
+              return
+            }
+
+            if (retries < maxRetries) {
+              retries++
+              window.setTimeout(attemptScroll, 100)
+            }
+          }
+
+          window.setTimeout(attemptScroll, 100)
+        } catch (error) {
+          console.error('Error searching for label:', error)
+          onError?.(`Error searching for label '${link.payload}'`)
+        }
+      }
+    },
+    [files, onFileSelect, onError, scrollToLineNumber]
+  )
+
+  const editorInteractionExtension = useMemo(() => {
+    if (fileType !== 'tex') {
+      return []
+    }
+
+    return [
+      createLatexLinkDecorationsExtension('tex'),
+      createLatexLinkClickExtension((link) => {
+        void handleLatexLinkClick(link)
+      }),
+    ]
+  }, [fileType, handleLatexLinkClick])
 
   useEffect(() => {
     onHideCommentsChange?.(hideComments)
   }, [hideComments, onHideCommentsChange])
 
-  const resizePrismLineNumbers = useCallback(() => {
-    const preElement = fileContentRef.current?.querySelector('pre.line-numbers')
-    if (!preElement) {
-      return
-    }
-
-    const prism = Prism as PrismWithLineNumbers
-    prism.plugins?.lineNumbers?.resize(preElement)
-  }, [])
-
-  const scrollToLineNumber = useCallback((lineNumber: number, behavior: ScrollBehavior = 'smooth'): boolean => {
-    if (lineNumber < 1) {
-      return false
-    }
-
-    const lineNumbersRows = fileContentRef.current?.querySelector('span.line-numbers-rows')
-    const lineElement = lineNumbersRows?.children[lineNumber - 1] as HTMLElement | undefined
-
-    if (!lineElement) {
-      return false
-    }
-
-    lineElement.scrollIntoView({ behavior, block: 'center' })
-    lineElement.classList.add('outline-jump-line')
-    window.setTimeout(() => {
-      lineElement.classList.remove('outline-jump-line')
-    }, 1600)
-    return true
-  }, [])
+  useEffect(() => {
+    currentFiles = files || []
+  }, [files])
 
   useEffect(() => {
     setImageUrl('')
     setContent('')
     setPdfUrl('')
     setHideComments(false)
-    
-    // Scroll to top when file changes
+
     window.scrollTo(0, 0)
-    
+
     const loadFileContent = async () => {
-      const fileType = getFileType(file.name)
-      
-      // For non-text files, always load as blob
-      if (fileType === 'image') {
+      const selectedFileType = getFileType(file.name)
+
+      if (selectedFileType === 'image') {
         setLoading(true)
         try {
           const blob = await file.zipFile.async('blob')
@@ -449,8 +280,8 @@ function FileViewer({
         }
         return
       }
-      
-      if (fileType === 'pdf') {
+
+      if (selectedFileType === 'pdf') {
         setLoading(true)
         try {
           const blob = await file.zipFile.async('blob')
@@ -464,8 +295,7 @@ function FileViewer({
         }
         return
       }
-      
-      // For text files, check if content is already cached
+
       if (file.content !== null) {
         setContent(file.content)
         return
@@ -487,13 +317,13 @@ function FileViewer({
     loadFileContent()
 
     return () => {
-      setImageUrl(prev => {
+      setImageUrl((prev) => {
         if (prev) {
           URL.revokeObjectURL(prev)
         }
         return ''
       })
-      setPdfUrl(prev => {
+      setPdfUrl((prev) => {
         if (prev) {
           URL.revokeObjectURL(prev)
         }
@@ -503,128 +333,70 @@ function FileViewer({
   }, [file])
 
   useEffect(() => {
-    if (displayContent && !loading) {
-      if (files && onFileSelect) {
-        setupLatexInputLinker(files)
-      }
-      if (fileContentRef.current) {
-        Prism.highlightAllUnder(fileContentRef.current)
-      } else {
-        Prism.highlightAll()
-      }
-
-      const timers: number[] = []
-      const raf = window.requestAnimationFrame(() => {
-        resizePrismLineNumbers()
-        timers.push(window.setTimeout(resizePrismLineNumbers, 80))
-        timers.push(window.setTimeout(resizePrismLineNumbers, 220))
-      })
-      
-      // Add click handler for LaTeX links
-      const handleLatexLinkClick = async (event: MouseEvent) => {
-        const target = event.target as HTMLElement
-
-        if (target.classList.contains('latex-input-link') || target.classList.contains('latex-graphics-link')) {
-          const inputPath = target.getAttribute('data-input-path')
-          const linkType = target.getAttribute('data-link-type')
-          if (inputPath && files && onFileSelect) {
-            const isImage = linkType === 'graphics'
-            const linkedFile = currentFiles.find(file => {
-              if (isImage) {
-                // For images, try multiple extensions
-                const cleanPath = inputPath.startsWith('./') ? inputPath.substring(2) : inputPath
-                const imageExtensions = ['.png', '.jpg', '.jpeg', '.pdf', '.eps', '.svg', '.gif']
-                const hasExtension = imageExtensions.some(ext => cleanPath.toLowerCase().endsWith(ext))
-
-                if (hasExtension) {
-                  return file.name === cleanPath || file.path === cleanPath ||
-                         (file.name.split('/').pop() || '') === cleanPath
-                } else {
-                  return imageExtensions.some(ext => {
-                    const pathWithExt = cleanPath + ext
-                    return file.name === pathWithExt || file.path === pathWithExt ||
-                           (file.name.split('/').pop() || '') === pathWithExt
-                  })
-                }
-              } else {
-                // For .tex files
-                const cleanPath = inputPath.endsWith('.tex') ? inputPath : inputPath + '.tex'
-                return file.name === cleanPath || file.path === cleanPath ||
-                       (file.name.split('/').pop() || '') === cleanPath
-              }
-            })
-            if (linkedFile) {
-              onFileSelect(linkedFile)
-            }
-          }
-        } else if (target.classList.contains('latex-ref-link')) {
-          const label = target.getAttribute('data-label')
-          if (label && files && onFileSelect) {
-            try {
-              const result = await findLabelInFiles(label)
-              if (result) {
-                // Select the file containing the label
-                onFileSelect(result.file)
-
-                // Scroll to the label after file is loaded (with retry logic)
-                let scrollRetries = 0
-                const maxRetries = 2
-
-                const attemptScroll = () => {
-                  if (scrollToLineNumber(result.lineNumber + 1)) {
-                    // Highlight all keyword tokens matching the label
-                    const keywords = document.querySelectorAll('span.token.keyword')
-                    keywords.forEach(el => {
-                      if (el.textContent?.trim() === label) {
-                        el.classList.add('highlight-label')
-                        setTimeout(() => {
-                          el.classList.remove('highlight-label')
-                        }, 5000)
-                      }
-                    })
-                  } else if (scrollRetries < maxRetries) {
-                    scrollRetries++
-                    setTimeout(attemptScroll, 100)
-                  }
-                }
-
-                setTimeout(attemptScroll, 100)
-              } else {
-                onError?.(`Label '${label}' not found`)
-              }
-            } catch (error) {
-              console.error('Error searching for label:', error)
-              onError?.(`Error searching for label '${label}'`)
-            }
-          }
-        }
-      }
-
-      document.addEventListener('click', handleLatexLinkClick)
-
-      return () => {
-        window.cancelAnimationFrame(raf)
-        timers.forEach((timerId) => window.clearTimeout(timerId))
-        document.removeEventListener('click', handleLatexLinkClick)
-      }
+    return () => {
+      destroyEditor()
     }
-  }, [displayContent, loading, wordWrap, files, onFileSelect, onError, scrollToLineNumber, resizePrismLineNumbers])
+  }, [destroyEditor])
 
   useEffect(() => {
-    if (!fileContentRef.current || fileType !== 'tex') {
+    if (fileType === 'image' || fileType === 'pdf') {
+      destroyEditor()
       return
     }
 
-    const resizeObserver = new ResizeObserver(() => {
-      resizePrismLineNumbers()
-    })
-
-    resizeObserver.observe(fileContentRef.current)
-
-    return () => {
-      resizeObserver.disconnect()
+    if (loading) {
+      // The host node is not rendered while loading. Destroy stale views so
+      // we always remount into the current host once loading completes.
+      destroyEditor()
+      return
     }
-  }, [fileType, resizePrismLineNumbers])
+
+    if (!editorContainerRef.current) {
+      return
+    }
+
+    const config: CodeViewerConfig = {
+      mode: getCodeViewerMode(fileType),
+      wordWrap,
+      readOnly: true,
+    }
+
+    if (!editorViewRef.current) {
+      const controller = createCodeViewerExtensionController(config, editorInteractionExtension)
+      const state = EditorState.create({
+        doc: displayContent,
+        extensions: controller.extensions,
+      })
+
+      const editorView = new EditorView({
+        state,
+        parent: editorContainerRef.current,
+      })
+
+      extensionControllerRef.current = controller
+      editorViewRef.current = editorView
+      return
+    }
+
+    const editorView = editorViewRef.current
+    const extensionController = extensionControllerRef.current
+    if (!extensionController) {
+      return
+    }
+
+    extensionController.reconfigure(editorView, config)
+    extensionController.setInteraction(editorView, editorInteractionExtension)
+
+    if (editorView.state.doc.toString() !== displayContent) {
+      editorView.dispatch({
+        changes: {
+          from: 0,
+          to: editorView.state.doc.length,
+          insert: displayContent,
+        },
+      })
+    }
+  }, [displayContent, fileType, getCodeViewerMode, loading, wordWrap, editorInteractionExtension, destroyEditor])
 
   useEffect(() => {
     if (!scrollToLine || fileType !== 'tex' || loading) {
@@ -633,6 +405,7 @@ function FileViewer({
 
     let retries = 0
     const maxRetries = 8
+
     const attemptScroll = () => {
       if (scrollToLineNumber(scrollToLine.lineNumber)) {
         return
@@ -695,14 +468,13 @@ function FileViewer({
 
   const copyToClipboard = async () => {
     try {
-      const fileType = getFileType(file.name)
-      
-      if (fileType === 'image') {
+      const selectedFileType = getFileType(file.name)
+
+      if (selectedFileType === 'image') {
         const blob = await file.zipFile.async('blob')
         const extension = file.name.toLowerCase().split('.').pop()
         let mimeType
-        
-        // Determine MIME type from file extension
+
         switch (extension) {
           case 'png':
             mimeType = 'image/png'
@@ -718,26 +490,25 @@ function FileViewer({
             mimeType = 'image/webp'
             break
           default:
-            mimeType = 'image/png' // fallback
+            mimeType = 'image/png'
         }
-        
-        // Create a new blob with the correct MIME type
+
         const typedBlob = new Blob([blob], { type: mimeType })
-        
+
         await navigator.clipboard.write([
           new ClipboardItem({
-            [mimeType]: typedBlob
-          })
+            [mimeType]: typedBlob,
+          }),
         ])
         setCopySuccess(true)
         return
       }
-      
-      if (fileType === 'pdf') {
+
+      if (selectedFileType === 'pdf') {
         onError?.('Cannot copy PDF files to clipboard')
         return
       }
-      
+
       const textContent = await getCurrentTextContent()
       await navigator.clipboard.writeText(textContent)
       setCopySuccess(true)
@@ -754,12 +525,10 @@ function FileViewer({
   const renderFileActions = () => {
     const copyTooltip = copySuccess
       ? 'Copied to clipboard'
-      : (fileType === 'tex' && hideComments
-          ? 'Copy without LaTeX comments'
-          : 'Copy to clipboard')
-    const downloadTooltip = fileType === 'tex' && hideComments
-      ? 'Download without comments'
-      : 'Download file'
+      : fileType === 'tex' && hideComments
+        ? 'Copy without LaTeX comments'
+        : 'Copy to clipboard'
+    const downloadTooltip = fileType === 'tex' && hideComments ? 'Download without comments' : 'Download file'
 
     return (
       <div className="file-actions">
@@ -823,12 +592,7 @@ function FileViewer({
         </div>
         <div className="file-content pdf-content">
           {pdfUrl ? (
-            <iframe 
-              src={pdfUrl} 
-              title={file.name}
-              width="100%" 
-              style={{ border: 'none', minHeight: '500px' }}
-            />
+            <iframe src={pdfUrl} title={file.name} width="100%" style={{ border: 'none', minHeight: '500px' }} />
           ) : (
             <p>Loading PDF...</p>
           )}
@@ -837,40 +601,19 @@ function FileViewer({
     )
   }
 
-  const getLanguageClass = () => {
-    switch (fileType) {
-      case 'tex':
-        return 'language-latex'
-      case 'bib':
-        return 'language-bibtex'
-      default:
-        return 'language-none'
-    }
-  }
-
-  const renderWithLineNumbers = (content: string) => {
-    return (
-      <pre className={`line-numbers ${wordWrap ? 'word-wrap' : 'no-wrap'}`} style={wordWrap ? { whiteSpace: 'pre-wrap' } : {}}>
-        <code className={getLanguageClass()}>
-          {content}
-        </code>
-      </pre>
-    )
-  }
-
   return (
     <div className="file-viewer">
       <div className="file-header">
         <div className="file-info">
           <h3>{file.name}</h3>
-          {fileType !== 'unknown' && (
-            <span className="file-type">{fileType.toUpperCase()}</span>
-          )}
+          {fileType !== 'unknown' && <span className="file-type">{fileType.toUpperCase()}</span>}
         </div>
         {renderFileActions()}
       </div>
-      <div className="file-content" ref={fileContentRef}>
-        {renderWithLineNumbers(displayContent)}
+      <div className="file-content">
+        <div className={`cm-viewer ${wordWrap ? 'word-wrap' : 'no-wrap'}`}>
+          <div ref={editorContainerRef} className="cm-viewer-host" />
+        </div>
       </div>
     </div>
   )

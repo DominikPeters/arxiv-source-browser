@@ -14,7 +14,7 @@ This is an arXiv source browser web application with a simple architecture:
 - **Frontend**: React TypeScript application with Vite
   - Handles user input (arXiv URLs/paper IDs)
   - Displays and navigates through extracted LaTeX files
-  - Provides syntax highlighting for LaTeX/bib files using Prism.js
+  - Provides syntax highlighting for LaTeX/bib files using CodeMirror 6
   - Previews images and PDFs
   - Uses JSZip to handle ZIP files from the backend
 
@@ -57,31 +57,30 @@ The Vite dev server is configured to proxy `/api` requests to `localhost:8000`.
   - `Search`: Modal component providing full-text search across files and filenames
 - **Types**: TypeScript interfaces in `src/types.ts`
 - **Styling**: CSS modules with responsive design
-- **Dependencies**: JSZip for ZIP handling, Prism.js for syntax highlighting
+- **Dependencies**: JSZip for ZIP handling, CodeMirror 6 + TeXlyre language packs for syntax highlighting
 
 ## LaTeX Link Detection
 
-The FileViewer component includes automatic link detection for LaTeX commands using Prism.js hooks:
+The FileViewer component includes automatic link detection for LaTeX commands using CodeMirror decorations:
 
 ### Supported Commands
 - `\input{filename}` - Links to .tex files (auto-adds .tex extension)
 - `\includegraphics[options]{filename}` - Links to image files (tries common extensions: .png, .jpg, .jpeg, .pdf, .eps, .svg, .gif)
 
-### Prism.js Tokenization Architecture
-**Key Challenge**: Prism's LaTeX tokenizer breaks commands into separate tokens rather than complete strings.
-
-**Token Structure**:
-- `\input{filename}` → `\input` (function) + `{` (punctuation) + `filename` (content) + `}` (punctuation)
-- `\includegraphics[options]{file}` → `\includegraphics` (function) + `[` + options + `]` + `{` (punctuation) + `file` (content) + `}` (punctuation)
-
+### CodeMirror 6 Architecture
 **Implementation Strategy**:
-1. **after-tokenize hook**: Detects token patterns and reconstructs commands
-   - For `\input`: Find function token + immediate `{` token
-   - For `\includegraphics`: Skip optional `[...]` parameters, find first `{` token
-   - Collect content between `{` and `}`
-   - Replace token sequence with custom `Prism.Token`
-2. **wrap hook**: Adds HTML attributes and CSS classes to custom tokens
-3. **Event delegation**: Handles clicks on generated links
+1. **Language extensions**:
+   - `codemirror-lang-latex` for TeX files
+   - `codemirror-lang-bib` for BibTeX files
+2. **Compartment-based configuration**:
+   - Reconfigure language, read-only mode, wrapping, and folding without recreating the editor
+3. **Decoration-based links**:
+   - Scan TeX text for `\input`, `\includegraphics`, and reference commands
+   - Add clickable span decorations with metadata attributes
+4. **DOM event extension**:
+   - Handle click events on decorated ranges and resolve target files/labels
+5. **Folding support**:
+   - Use fold gutter and fold keymap for TeX/Bib viewers
 
 **File Resolution**:
 - Handles relative paths (removes `./` prefix)

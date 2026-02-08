@@ -856,43 +856,31 @@ button[data-tooltip]:focus-visible::after {
   font-size: 0.85rem;
 }
 
-/* Prism line-numbers styles */
-.file-content pre {
-  margin: 0rem !important;
-  border: 1px solid var(--border-primary);
-  /* border-radius: 6px; */
-  box-shadow: var(--shadow-sm);
-  font-family: ui-monospace, 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-  line-height: 1.4;
-  overflow: auto;
-  /* max-height: calc(100% - 2rem); */
+/* CodeMirror viewer styles */
+.cm-viewer {
+  height: 100%;
 }
 
-.file-content pre.word-wrap {
-  white-space: pre-wrap;
-  word-wrap: break-word;
+.cm-viewer-host {
+  height: 100%;
+}
+
+.cm-viewer .cm-editor {
+  margin: 0;
+  height: 100%;
+}
+
+.cm-viewer .cm-scroller {
+  height: 100%;
+  overflow: auto;
+}
+
+.cm-viewer.word-wrap .cm-scroller {
   overflow-x: hidden;
 }
 
-.file-content pre.no-wrap {
-  white-space: pre;
+.cm-viewer.no-wrap .cm-scroller {
   overflow-x: auto;
-}
-
-.file-content code {
-  font-family: inherit;
-  color: var(--text-primary);
-}
-
-/* Keep Prism code lines and line-number gutter on identical metrics. */
-.file-content pre.line-numbers > code[class*="language-"] {
-  line-height: inherit;
-  font-size: inherit;
-}
-
-.file-content .line-numbers-rows > span.outline-jump-line {
-  background: rgb(180 83 9 / 0.24);
-  border-radius: 2px;
 }
 
 /* Settings modal styles */
@@ -1635,67 +1623,39 @@ button[data-tooltip]:focus-visible::after {
 /* LaTeX input and graphics links */
 .latex-input-link,
 .latex-graphics-link {
-  cursor: pointer !important;
-  color: var(--secondary-color) !important;
-  text-decoration: underline !important;
+  cursor: pointer;
+  color: var(--secondary-color);
+  text-decoration: underline;
 }
 
 .latex-input-link:hover,
 .latex-graphics-link:hover {
-  color: var(--secondary-hover) !important;
-  background-color: rgba(180, 83, 9, 0.1) !important;
-  text-decoration: none !important;
-  border-radius: 3px !important;
-  padding: 1px 2px !important;
-  margin: -1px -2px !important;
+  color: var(--secondary-hover);
+  background-color: rgba(180, 83, 9, 0.1);
+  text-decoration: none;
+  border-radius: 3px;
 }
 
 /* Different styling for graphics links */
 .latex-graphics-link {
-  color: var(--primary-color) !important;
+  color: var(--primary-color);
 }
 
 .latex-graphics-link:hover {
-  color: var(--primary-hover) !important;
-  background-color: rgba(179, 27, 27, 0.1) !important;
+  color: var(--primary-hover);
+  background-color: rgba(179, 27, 27, 0.1);
 }
 
 /* LaTeX reference links */
 .latex-ref-link {
-  cursor: pointer !important;
-  color: var(--secondary-color) !important;
-  text-decoration: underline !important;
+  cursor: pointer;
+  color: var(--secondary-color);
+  text-decoration: underline;
 }
 
 .latex-ref-link:hover {
-  color: var(--secondary-hover) !important;
-  background-color: rgba(180, 83, 9, 0.1) !important;
-  text-decoration: none !important;
-  border-radius: 3px !important;
-  padding: 1px 2px !important;
-  margin: -1px -2px !important;
-}
-
-/* Highlight label when scrolled to */
-.token.keyword.highlight-label {
-  animation: labelHighlight 4s ease-out forwards;
-}
-
-@keyframes labelHighlight {
-  0% {
-    background-color: transparent;
-    box-shadow: none;
-  }
-  5% {
-    background-color: rgb(255, 240, 182);
-    box-shadow: 0 0 6px rgb(219 209 171);
-  }
-  80% {
-    background-color: rgb(255, 240, 182);
-    box-shadow: 0 0 6px rgb(219 209 171);
-  }
-  100% {
-    background-color: transparent;
-    box-shadow: none;
-  }
+  color: var(--secondary-hover);
+  background-color: rgba(180, 83, 9, 0.1);
+  text-decoration: none;
+  border-radius: 3px;
 }

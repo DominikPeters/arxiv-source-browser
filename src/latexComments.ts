@@ -64,12 +64,3 @@ export function buildVisibleLineMapAfterCommentStrip(text: string): number[] {
 
   return mapping
 }
-
-export function normalizeWrappedDisplayText(text: string): string {
-  // Prism line-number measurements can drift on wrapped lines ending in spaces.
-  // Normalize only for rendering; copy/download still use original content.
-  return text
-    .split('\n')
-    .map((line) => line.replace(/[ \t]+$/, ''))
-    .join('\n')
-}

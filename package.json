@@ -11,11 +11,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@types/prismjs": "^1.26.5",
+    "@codemirror/commands": "^6.10.0",
+    "@codemirror/language": "^6.11.3",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.38.2",
+    "codemirror-lang-bib": "^0.1.1",
+    "codemirror-lang-latex": "^0.2.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.513.0",
-    "prismjs": "^1.30.0",
-    "prismjs-bibtex": "^2.1.0",
     "react": "^19.1.0",
     "react-arborist": "^3.4.3",
     "react-dom": "^19.1.0"
