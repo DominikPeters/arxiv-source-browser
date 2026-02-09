@@ -814,17 +814,24 @@ function App() {
       return
     }
 
-    setAppMode(mode)
-    setInitialLoading(false)
-
     if (mode === 'browse') {
-      if (paperId && files.length > 0) {
-        window.history.pushState(null, '', buildURL(paperId, selectedFile?.path))
-      } else {
-        window.history.pushState(null, '', BASE_URL)
+      setAppMode('browse')
+      setInitialLoading(false)
+      if (paperId) {
+        void handleArxivSubmit(paperId)
+        return
       }
+      window.history.pushState(null, '', BASE_URL)
       return
     }
+
+    if (paperId) {
+      void handleDiffSubmit(paperId)
+      return
+    }
+
+    setAppMode('diff')
+    setInitialLoading(false)
 
     if (diffBaseId && diffFromVersion !== null && diffToVersion !== null) {
       updateDiffHistory(diffBaseId, diffFromVersion, diffToVersion, selectedDiffFilePath)
