@@ -62,7 +62,7 @@ const bibtexLanguage: LanguageFn = (hljs) => {
         relevance: 0,
       },
     ],
-  } as any
+  } as unknown as ReturnType<LanguageFn>
 }
 
 export default bibtexLanguage

@@ -7,9 +7,20 @@ export default defineConfig({
   plugins: [react()],
   base: process.env.VITE_BASE_URL || '/',
   resolve: {
-    alias: {
-      '@git-diff-view/lowlight': fileURLToPath(new URL('./src/diff/minimalLowlight.ts', import.meta.url)),
-    },
+    alias: [
+      {
+        find: '@git-diff-view/lowlight',
+        replacement: fileURLToPath(new URL('./src/diff/minimalLowlight.ts', import.meta.url)),
+      },
+      {
+        find: /^codemirror-lang-latex$/,
+        replacement: fileURLToPath(new URL('./src/codemirror/shims/codemirror-lang-latex.ts', import.meta.url)),
+      },
+      {
+        find: /^codemirror-lang-bib$/,
+        replacement: fileURLToPath(new URL('./src/codemirror/shims/codemirror-lang-bib.ts', import.meta.url)),
+      },
+    ],
   },
   build: {
     rollupOptions: {
