@@ -1,9 +1,12 @@
 <?php
 /**
  * arXiv Source Downloader and Converter
- * 
- * Takes an arXiv URL, extracts the paper ID, downloads the source,
- * converts from tar.gz to zip, and serves it to the user.
+ *
+ * Supports:
+ * - Legacy source download: ?url=<id-or-arxiv-url>
+ * - Explicit source download: ?action=source&id=<versioned-id>
+ * - Version metadata: ?action=versions&id=<id-or-arxiv-url>
+ * - Lightweight metadata: ?action=meta&id=<id-or-arxiv-url>
  */
 
 // Error reporting disabled for production security
@@ -18,18 +21,23 @@ set_time_limit(120);
  * Extract paper ID from arXiv URL or validate direct ID input
  */
 function extractArxivId($input) {
+    $input = trim((string) $input);
+    if ($input === '') {
+        return false;
+    }
+
     // First check if input is already a valid arXiv ID
     $idPatterns = [
         '/^([0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?)$/',  // New format: 2402.10439 or 2402.10439v1
         '/^([a-z-]+\/[0-9]{7}(?:v[0-9]+)?)$/',     // Old format: math-ph/0501023 or math-ph/0501023v1
     ];
-    
+
     foreach ($idPatterns as $pattern) {
         if (preg_match($pattern, $input, $matches)) {
             return $matches[1];
         }
     }
-    
+
     // If not a direct ID, try to extract from URL
     $urlPatterns = [
         '/arxiv\.org\/abs\/([0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?)/',
@@ -39,35 +47,70 @@ function extractArxivId($input) {
         // Also handle old format IDs in URLs
         '/arxiv\.org\/(?:abs|pdf|html|src)\/([a-z-]+\/[0-9]{7}(?:v[0-9]+)?)/',
     ];
-    
+
     foreach ($urlPatterns as $pattern) {
         if (preg_match($pattern, $input, $matches)) {
             return $matches[1];
         }
     }
-    
+
     return false;
 }
 
 /**
- * Download file from URL with error handling
+ * Normalize ID into base/version tuple.
  */
-function downloadFile($url, $destination) {
+function normalizeArxivId($input) {
+    $id = extractArxivId($input);
+    if (!$id) {
+        return false;
+    }
+
+    if (preg_match('/^(.*)v([0-9]+)$/', $id, $matches)) {
+        return [
+            'id' => $id,
+            'baseId' => $matches[1],
+            'version' => (int) $matches[2],
+        ];
+    }
+
+    return [
+        'id' => $id,
+        'baseId' => $id,
+        'version' => null,
+    ];
+}
+
+/**
+ * Download text from URL with error handling.
+ */
+function fetchText($url) {
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 60);
     curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (compatible; arxiv-source-browser.github.io)');
-    
+
     $data = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    
+
     if ($httpCode !== 200 || $data === false) {
         return false;
     }
-    
+
+    return $data;
+}
+
+/**
+ * Download file from URL with error handling
+ */
+function downloadFile($url, $destination) {
+    $data = fetchText($url);
+    if ($data === false) {
+        return false;
+    }
     return file_put_contents($destination, $data) !== false;
 }
 
@@ -194,37 +237,36 @@ function createZipFromDirectory($sourceDir, $zipFile) {
     if (!extension_loaded('zip')) {
         return false;
     }
-    
+
     $zip = new ZipArchive();
-    if ($zip->open($zipFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== TRUE) {
+    if ($zip->open($zipFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
         return false;
     }
-    
+
     // Check if the extracted directory contains a single subdirectory
     // If so, use that as the source to avoid nested folder structure
     $items = array_values(array_diff(scandir($sourceDir), ['.', '..']));
     if (count($items) === 1 && is_dir($sourceDir . '/' . $items[0])) {
         $sourceDir = $sourceDir . '/' . $items[0];
     }
-    
+
     $iterator = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($sourceDir, RecursiveDirectoryIterator::SKIP_DOTS),
         RecursiveIteratorIterator::SELF_FIRST
     );
-    
+
     foreach ($iterator as $file) {
         $filePath = $file->getRealPath();
         $relativePath = substr($filePath, strlen($sourceDir) + 1);
-        
+
         if ($file->isDir()) {
             $zip->addEmptyDir($relativePath);
         } else {
             $zip->addFile($filePath, $relativePath);
         }
     }
-    
-    $result = $zip->close();
-    return $result;
+
+    return $zip->close();
 }
 
 /**
@@ -234,7 +276,7 @@ function deleteDirectory($dir) {
     if (!is_dir($dir)) {
         return;
     }
-    
+
     $files = array_diff(scandir($dir), ['.', '..']);
     foreach ($files as $file) {
         $path = $dir . '/' . $file;
@@ -276,7 +318,7 @@ function isCacheValid($filePath) {
 function manageCacheSize() {
     $cacheDir = getCacheDir();
     $files = [];
-    
+
     // Get all zip files in cache directory with their modification times
     if ($handle = opendir($cacheDir)) {
         while (false !== ($entry = readdir($handle))) {
@@ -290,12 +332,12 @@ function manageCacheSize() {
         }
         closedir($handle);
     }
-    
+
     // Sort by modification time (newest first)
     usort($files, function($a, $b) {
         return $b['mtime'] - $a['mtime'];
     });
-    
+
     // Delete files beyond the 100 most recent
     if (count($files) > 100) {
         for ($i = 100; $i < count($files); $i++) {
@@ -348,13 +390,13 @@ function cleanupTempFiles($tempDir) {
 function cleanupOldTempDirs() {
     $apiDir = __DIR__;
     $cutoffTime = time() - 3600; // 1 hour ago
-    
+
     if ($handle = opendir($apiDir)) {
         while (false !== ($entry = readdir($handle))) {
             if (strpos($entry, 'temp_') === 0 && is_dir($apiDir . '/' . $entry)) {
                 $dirPath = $apiDir . '/' . $entry;
                 $dirTime = filemtime($dirPath);
-                
+
                 if ($dirTime < $cutoffTime) {
                     cleanupTempFiles($dirPath);
                 }
@@ -372,108 +414,226 @@ function serveFile($filePath, $filename, $contentType = 'application/zip') {
         http_response_code(404);
         die('File not found');
     }
-    
+
     header('Content-Type: ' . $contentType);
     header('Content-Disposition: attachment; filename="' . $filename . '"');
     header('Content-Length: ' . filesize($filePath));
     header('Cache-Control: no-cache, must-revalidate');
-    
+
     readfile($filePath);
     exit;
 }
 
-// Main execution
-try {
-    // Register cleanup handler to ensure temp files are deleted even on fatal errors
-    registerCleanupHandler();
-    
-    // Clean up old temp directories periodically
-    cleanupOldTempDirs();
-    
-    // Get URL parameter (can be URL or direct ID)
-    $arxivInput = $_GET['url'] ?? '';
-    
-    if (empty($arxivInput)) {
-        http_response_code(400);
-        die('Error: No arXiv URL or ID provided. Usage: ?url=https://arxiv.org/abs/1706.03762 or ?url=1706.03762');
-    }
-    
-    // Extract paper ID
-    $paperId = extractArxivId($arxivInput);
-    if (!$paperId) {
-        http_response_code(400);
-        die('Error: Invalid arXiv URL or ID format');
-    }
-    
-    // Check if file is already cached
+/**
+ * Return JSON payload and terminate.
+ */
+function jsonResponse($statusCode, $payload) {
+    http_response_code($statusCode);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($payload, JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
+/**
+ * Fetch and cache source ZIP for an arXiv ID.
+ */
+function getOrBuildSourceZip($paperId) {
     $cachedFilePath = getCachedFilePath($paperId);
     if (isCacheValid($cachedFilePath)) {
-        // Update file modification time to mark as recently accessed
         touch($cachedFilePath);
-        
-        // Serve cached file
-        $zipFilename = 'arxiv_' . str_replace(['/', '.'], '_', $paperId) . '_source.zip';
-        serveFile($cachedFilePath, $zipFilename);
+        return $cachedFilePath;
     }
-    
-    // File not cached, need to download and process
+
     $tempDir = __DIR__ . '/temp_' . uniqid();
-    
+    mkdir($tempDir, 0755, true);
+    addTempDirForCleanup($tempDir);
+
     try {
-        // Create temporary directory for processing
-        mkdir($tempDir, 0755, true);
-        
-        // Register this temp directory for cleanup
-        addTempDirForCleanup($tempDir);
-        
-        // Construct source URL
         $sourceUrl = 'https://arxiv.org/src/' . $paperId;
         $tarFile = $tempDir . '/source.tar.gz';
         $extractDir = $tempDir . '/extracted';
         $tempZipFile = $tempDir . '/arxiv_' . str_replace(['/', '.'], '_', $paperId) . '_source.zip';
-        
-        // Download source file
+
         if (!downloadFile($sourceUrl, $tarFile)) {
             throw new Exception('Could not download source file from arXiv');
         }
-        
-        // Extract tar.gz
+
         if (!extractTarGz($tarFile, $extractDir)) {
             throw new Exception('Could not extract tar.gz file');
         }
-        
-        // Create ZIP file in temp location
+
         if (!createZipFromDirectory($extractDir, $tempZipFile)) {
             throw new Exception('Could not create ZIP file');
         }
-        
-        // Move ZIP file to cache
+
         if (!rename($tempZipFile, $cachedFilePath)) {
             throw new Exception('Could not save file to cache');
         }
-        
-        // Manage cache size (keep only 100 most recent files)
+
         manageCacheSize();
-        
-        // Cleanup temp files before serving (since serveFile calls exit)
+        return $cachedFilePath;
+    } finally {
         cleanupTempFiles($tempDir);
-        
-        // Serve the cached file
+    }
+}
+
+/**
+ * Parse versions from the arXiv abs page submission-history block.
+ */
+function fetchSubmissionVersions($baseId) {
+    $html = fetchText('https://arxiv.org/abs/' . $baseId);
+    if ($html === false) {
+        throw new Exception('Could not fetch arXiv abstract page');
+    }
+
+    if (!preg_match('/<div class="submission-history">(.*?)<\/div>/s', $html, $matches)) {
+        throw new Exception('Submission history block not found');
+    }
+
+    $historyHtml = $matches[1];
+    $versionPattern = '/<strong>\s*(?:<a[^>]*>)?\[v([0-9]+)\](?:<\/a>)?\s*<\/strong>\s*([^<]+?)\s*\(([^)]+)\)\s*<br\/?>/si';
+    preg_match_all($versionPattern, $historyHtml, $allMatches, PREG_SET_ORDER);
+
+    if (count($allMatches) === 0) {
+        throw new Exception('No submission versions found in history');
+    }
+
+    $versions = [];
+    foreach ($allMatches as $match) {
+        $version = (int) $match[1];
+        $submittedUtc = trim(html_entity_decode($match[2], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        $sizeLabel = trim(html_entity_decode($match[3], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        $versions[$version] = [
+            'version' => $version,
+            'id' => $baseId . 'v' . $version,
+            'submittedUtc' => $submittedUtc,
+            'sizeLabel' => $sizeLabel,
+        ];
+    }
+
+    ksort($versions, SORT_NUMERIC);
+    $orderedVersions = array_values($versions);
+
+    return [
+        'versions' => $orderedVersions,
+        'latestVersion' => $orderedVersions[count($orderedVersions) - 1]['version'],
+    ];
+}
+
+/**
+ * Parse title from abs page for metadata payload.
+ */
+function fetchPaperTitle($id) {
+    $html = fetchText('https://arxiv.org/abs/' . $id);
+    if ($html === false) {
+        return null;
+    }
+
+    if (preg_match('/<title>\s*\[[^\]]+\]\s*(.*?)<\/title>/si', $html, $matches)) {
+        return trim(html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+    }
+    return null;
+}
+
+/**
+ * Resolve id/url from request parameters.
+ */
+function resolveArxivInput($preferredKey = 'id') {
+    $raw = $_GET[$preferredKey] ?? '';
+    if ($raw === '' && $preferredKey !== 'url') {
+        $raw = $_GET['url'] ?? '';
+    }
+    return $raw;
+}
+
+// Main execution
+try {
+    registerCleanupHandler();
+    cleanupOldTempDirs();
+
+    $action = $_GET['action'] ?? '';
+
+    // Legacy behavior: no action means source download from ?url=
+    if ($action === '') {
+        $arxivInput = $_GET['url'] ?? '';
+        if (empty($arxivInput)) {
+            http_response_code(400);
+            die('Error: No arXiv URL or ID provided. Usage: ?url=https://arxiv.org/abs/1706.03762 or ?url=1706.03762');
+        }
+
+        $normalized = normalizeArxivId($arxivInput);
+        if (!$normalized) {
+            http_response_code(400);
+            die('Error: Invalid arXiv URL or ID format');
+        }
+
+        $paperId = $normalized['id'];
+        $cachedFilePath = getOrBuildSourceZip($paperId);
         $zipFilename = 'arxiv_' . str_replace(['/', '.'], '_', $paperId) . '_source.zip';
         serveFile($cachedFilePath, $zipFilename);
-        
-    } finally {
-        // Always cleanup temporary files
-        cleanupTempFiles($tempDir);
     }
-    
+
+    if ($action === 'source') {
+        $arxivInput = resolveArxivInput('id');
+        if (empty($arxivInput)) {
+            jsonResponse(400, ['ok' => false, 'error' => 'Missing id parameter']);
+        }
+
+        $normalized = normalizeArxivId($arxivInput);
+        if (!$normalized) {
+            jsonResponse(400, ['ok' => false, 'error' => 'Invalid arXiv URL or ID format']);
+        }
+
+        $paperId = $normalized['id'];
+        $cachedFilePath = getOrBuildSourceZip($paperId);
+        $zipFilename = 'arxiv_' . str_replace(['/', '.'], '_', $paperId) . '_source.zip';
+        serveFile($cachedFilePath, $zipFilename);
+    }
+
+    if ($action === 'versions') {
+        $arxivInput = resolveArxivInput('id');
+        if (empty($arxivInput)) {
+            jsonResponse(400, ['ok' => false, 'error' => 'Missing id parameter']);
+        }
+
+        $normalized = normalizeArxivId($arxivInput);
+        if (!$normalized) {
+            jsonResponse(400, ['ok' => false, 'error' => 'Invalid arXiv URL or ID format']);
+        }
+
+        $baseId = $normalized['baseId'];
+        $result = fetchSubmissionVersions($baseId);
+        jsonResponse(200, [
+            'ok' => true,
+            'baseId' => $baseId,
+            'versions' => $result['versions'],
+            'latestVersion' => $result['latestVersion'],
+        ]);
+    }
+
+    if ($action === 'meta') {
+        $arxivInput = resolveArxivInput('id');
+        if (empty($arxivInput)) {
+            jsonResponse(400, ['ok' => false, 'error' => 'Missing id parameter']);
+        }
+
+        $normalized = normalizeArxivId($arxivInput);
+        if (!$normalized) {
+            jsonResponse(400, ['ok' => false, 'error' => 'Invalid arXiv URL or ID format']);
+        }
+
+        $title = fetchPaperTitle($normalized['id']);
+        jsonResponse(200, [
+            'ok' => true,
+            'id' => $normalized['id'],
+            'baseId' => $normalized['baseId'],
+            'version' => $normalized['version'],
+            'title' => $title,
+        ]);
+    }
+
+    jsonResponse(400, ['ok' => false, 'error' => 'Unsupported action']);
 } catch (Exception $e) {
-    // Cleanup on error
-    if (isset($tempDir)) {
-        cleanupTempFiles($tempDir);
-    }
-    
-    http_response_code(500);
-    die('Error: ' . $e->getMessage());
+    jsonResponse(500, ['ok' => false, 'error' => $e->getMessage()]);
 }
-?>
+

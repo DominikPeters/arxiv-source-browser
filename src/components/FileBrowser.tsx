@@ -1,7 +1,7 @@
 import { useMemo, useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react'
 import type React from 'react'
 import { Tree, type TreeApi } from 'react-arborist'
-import { File, Folder, FolderOpen, FileText, Image, BookOpen, FileType, Download, ChevronDown, ChevronUp, Search } from 'lucide-react'
+import { File, Folder, FolderOpen, FileText, Image, LibraryBig, FileType, Download, ChevronDown, ChevronUp, Search } from 'lucide-react'
 import type { FileEntry } from '../types'
 import { getFileType } from '../types'
 import SearchComponent from './Search'
@@ -165,12 +165,15 @@ const FileBrowser = forwardRef<FileBrowserRef, FileBrowserProps>(({
 
     if (!node.file) return <File size={16} />
 
+    const lowerName = node.file.name.toLowerCase()
+    if (lowerName.endsWith('.bib') || lowerName.endsWith('.bbl')) {
+      return <LibraryBig size={16} />
+    }
+
     const type = getFileType(node.file.name)
     switch (type) {
       case 'tex':
         return <FileText size={16} />
-      case 'bib':
-        return <BookOpen size={16} />
       case 'image':
         return <Image size={16} />
       case 'pdf':

@@ -10,6 +10,25 @@ export interface FileEntry {
 
 export type FileType = 'tex' | 'bib' | 'image' | 'pdf' | 'text' | 'unknown'
 
+export type AppMode = 'browse' | 'diff'
+
+export interface DiffVersion {
+  version: number
+  id: string
+  submittedUtc: string
+  sizeLabel: string
+}
+
+export type DiffFileStatus = 'added' | 'removed' | 'modified' | 'unchanged'
+export type DiffViewLayout = 'split' | 'unified'
+
+export interface DiffSelectionState {
+  baseId: string
+  fromVersion: number
+  toVersion: number
+  filePath: string | null
+}
+
 export function getFileType(filename: string): FileType {
   const ext = filename.toLowerCase().split('.').pop()
   
@@ -41,10 +60,21 @@ export function getFileType(filename: string): FileType {
   }
 }
 
-export interface URLState {
+export interface BrowseURLState {
+  mode: 'browse'
   arxivId: string | null
   filePath: string | null
 }
+
+export interface DiffURLState {
+  mode: 'diff'
+  arxivId: string | null
+  fromVersion: number | null
+  toVersion: number | null
+  filePath: string | null
+}
+
+export type URLState = BrowseURLState | DiffURLState
 
 export function parseURL(pathname: string): URLState {
   // Remove base URL prefix if present
@@ -56,25 +86,61 @@ export function parseURL(pathname: string): URLState {
     }
   }
   
-  // Expected format: /abs/[arxiv-id]/[file-path]
+  // Expected diff format: /diff/[arxiv-id]/vA..vB/[file-path]
+  const diffMatch = cleanPath.match(/^\/diff\/([^/]+)\/v([0-9]+)\.\.v([0-9]+)(?:\/(.*))?$/)
+  if (diffMatch) {
+    return {
+      mode: 'diff',
+      arxivId: diffMatch[1],
+      fromVersion: Number(diffMatch[2]),
+      toVersion: Number(diffMatch[3]),
+      filePath: diffMatch[4] || null,
+    }
+  }
+
+  // Expected browse format: /abs/[arxiv-id]/[file-path]
   const match = cleanPath.match(/^\/abs\/([^/]+)(?:\/(.*))?$/)
   
   if (!match) {
-    return { arxivId: null, filePath: null }
+    return { mode: 'browse', arxivId: null, filePath: null }
   }
   
   return {
+    mode: 'browse',
     arxivId: match[1],
     filePath: match[2] || null
   }
 }
 
-export function buildURL(arxivId: string, filePath?: string): string {
+export function buildBrowseURL(arxivId: string, filePath?: string): string {
   const basePath = BASE_URL === '/' ? '' : BASE_URL.replace(/\/$/, '')
   if (!filePath) {
     return `${basePath}/abs/${arxivId}`
   }
   return `${basePath}/abs/${arxivId}/${filePath}`
+}
+
+export function buildDiffURL(arxivId: string, fromVersion: number, toVersion: number, filePath?: string): string {
+  const basePath = BASE_URL === '/' ? '' : BASE_URL.replace(/\/$/, '')
+  const versionPath = `v${fromVersion}..v${toVersion}`
+  if (!filePath) {
+    return `${basePath}/diff/${arxivId}/${versionPath}`
+  }
+  return `${basePath}/diff/${arxivId}/${versionPath}/${filePath}`
+}
+
+// Backwards-compatible alias used throughout browse mode.
+export const buildURL = buildBrowseURL
+
+export function splitArxivVersion(arxivId: string): { baseId: string; version: number | null } {
+  const match = arxivId.match(/^(.*)v([0-9]+)$/)
+  if (!match) {
+    return { baseId: arxivId, version: null }
+  }
+  return {
+    baseId: match[1],
+    version: Number(match[2]),
+  }
 }
 
 export function extractArxivId(input: string): string | null {
