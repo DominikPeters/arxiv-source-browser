@@ -1,17 +1,19 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react'
 import './App.css'
 import ArxivInput from './components/ArxivInput'
 import FileBrowser, { type FileBrowserRef } from './components/FileBrowser'
-import FileViewer from './components/FileViewer'
 import Settings from './components/Settings'
 import Toast from './components/Toast'
-import DiffMode, { type DiffModeEntry } from './components/DiffMode'
+import type { DiffModeEntry } from './components/DiffMode'
 import type { AppMode, DiffVersion, FileEntry, DiffViewLayout } from './types'
 import { parseURL, buildURL, buildDiffURL, extractArxivId, getFileType, splitArxivVersion } from './types'
 import { BASE_URL, API_URL } from './config'
 import { Settings as SettingsIcon, Loader2, Columns2, GitCompare } from 'lucide-react'
 import { buildVisibleLineMapAfterCommentStrip } from './latexComments'
 import { parseTexOutline, type TexOutlineEntry } from './texOutline'
+
+const FileViewer = lazy(() => import('./components/FileViewer'))
+const DiffMode = lazy(() => import('./components/DiffMode'))
 
 interface ExamplePaper {
   id: string
@@ -980,16 +982,18 @@ function App() {
           </div>
           <div className="file-viewer-container">
             {selectedFile ? (
-              <FileViewer
-                file={selectedFile}
-                wordWrap={wordWrap}
-                onError={setToastMessage}
-                files={files}
-                onFileSelect={handleFileSelect}
-                onHideCommentsChange={setHideCommentsInViewer}
-                onVisibleLineChange={handleViewerVisibleLineChange}
-                scrollToLine={outlineJumpRequest}
-              />
+              <Suspense fallback={<div className="no-file-selected">Loading viewer…</div>}>
+                <FileViewer
+                  file={selectedFile}
+                  wordWrap={wordWrap}
+                  onError={setToastMessage}
+                  files={files}
+                  onFileSelect={handleFileSelect}
+                  onHideCommentsChange={setHideCommentsInViewer}
+                  onVisibleLineChange={handleViewerVisibleLineChange}
+                  scrollToLine={outlineJumpRequest}
+                />
+              </Suspense>
             ) : (
               <div className="no-file-selected">
                 Select a file to view its contents
@@ -1001,22 +1005,24 @@ function App() {
 
       {appMode === 'diff' && (
         <div className="app-content diff-app-content">
-          <DiffMode
-            loading={loading}
-            baseId={diffBaseId || splitArxivVersion(paperId).baseId}
-            versions={diffVersions}
-            fromVersion={diffFromVersion}
-            toVersion={diffToVersion}
-            entries={diffEntries}
-            selectedPath={selectedDiffFilePath}
-            message={diffMessage}
-            wordWrap={wordWrap}
-            diffViewLayout={diffViewLayout}
-            onFromVersionChange={handleDiffFromVersionChange}
-            onToVersionChange={handleDiffToVersionChange}
-            onSelectFile={handleDiffFileSelect}
-            onError={setToastMessage}
-          />
+          <Suspense fallback={<div className="diff-loading-panel">Loading diff view…</div>}>
+            <DiffMode
+              loading={loading}
+              baseId={diffBaseId || splitArxivVersion(paperId).baseId}
+              versions={diffVersions}
+              fromVersion={diffFromVersion}
+              toVersion={diffToVersion}
+              entries={diffEntries}
+              selectedPath={selectedDiffFilePath}
+              message={diffMessage}
+              wordWrap={wordWrap}
+              diffViewLayout={diffViewLayout}
+              onFromVersionChange={handleDiffFromVersionChange}
+              onToVersionChange={handleDiffToVersionChange}
+              onSelectFile={handleDiffFileSelect}
+              onError={setToastMessage}
+            />
+          </Suspense>
         </div>
       )}
 

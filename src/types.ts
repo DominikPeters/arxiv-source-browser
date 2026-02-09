@@ -1,4 +1,4 @@
-import JSZip from 'jszip'
+import type JSZip from 'jszip'
 import { BASE_URL } from './config'
 
 export interface FileEntry {

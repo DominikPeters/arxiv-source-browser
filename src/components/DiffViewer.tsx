@@ -6,6 +6,7 @@ import type { FileEntry } from '../types'
 import type { DiffFileStatus } from '../types'
 import type { DiffViewLayout } from '../types'
 import { getFileType } from '../types'
+import bibtexLanguage from '../diff/bibtexLanguage'
 import DiffStatusIcon from './DiffStatusIcon'
 
 interface DiffViewerProps {
@@ -22,6 +23,11 @@ const LATEX_EXTENSIONS = new Set(['tex', 'latex', 'sty', 'cls', 'bbl', 'dtx', 'i
 
 // TeX sources can be long; keep syntax highlighting enabled for large files.
 highlighter.setMaxLineToIgnoreSyntax(100000)
+if (!highlighter.hasRegisteredCurrentLang('bibtex')) {
+  const engine = highlighter.getHighlighterEngine()
+  engine.register('bibtex', bibtexLanguage)
+  engine.registerAlias('bibtex', ['bib'])
+}
 
 function getDiffLanguage(filePath: string): string {
   const ext = filePath.toLowerCase().split('.').pop() || ''
@@ -29,7 +35,7 @@ function getDiffLanguage(filePath: string): string {
     return 'latex'
   }
   if (ext === 'bib') {
-    return 'plaintext'
+    return 'bibtex'
   }
   return 'plaintext'
 }
