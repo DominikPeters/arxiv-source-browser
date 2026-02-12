@@ -4,6 +4,7 @@ import ArxivInput from './components/ArxivInput'
 import FileBrowser, { type FileBrowserRef } from './components/FileBrowser'
 import Settings from './components/Settings'
 import Toast from './components/Toast'
+import LandingFeatureVisual from './components/LandingFeatureVisual'
 import type { DiffModeEntry } from './components/DiffMode'
 import type { AppMode, DiffVersion, FileEntry, DiffViewLayout } from './types'
 import { parseURL, buildURL, buildDiffURL, extractArxivId, getFileType, splitArxivVersion } from './types'
@@ -913,39 +914,62 @@ function App() {
         </div>
         {initialLoading && (
           <div className="start-page">
-            <div className="welcome-section">
+            <div className="landing-loading">
               <div className="loading-spinner">
                 <Loader2 size={32} className="spinner" />
               </div>
               <h2>Loading arXiv paper...</h2>
-              <p className="description">
-                Please wait while we fetch and process the source files.
+              <p>
+                Fetching source files and preparing the browser.
               </p>
             </div>
           </div>
         )}
         {appMode === 'browse' && files.length === 0 && !initialLoading && (
           <div className="start-page">
-            <div className="welcome-section">
-              <h2>Browse arXiv LaTeX Source Files</h2>
-              <p className="description">
-                Explore the LaTeX source code of papers from arXiv.
-                View, navigate, and download the raw files that researchers use to create their publications.
+            <section className="landing-hero">
+              <p className="landing-eyebrow">arXiv source explorer</p>
+              <h2>Inspect source files, prepare clean snippets, and compare revisions.</h2>
+              <p className="landing-description">
+                Open any arXiv source archive, browse all files, remove comments for cleaner LLM pasting,
+                estimate token count, and compare two versions with focused file-level diffs.
               </p>
-            </div>
+              <div className="landing-highlights">
+                <span className="highlight-chip">Comment-free copy mode</span>
+                <span className="highlight-chip">Token count estimates</span>
+                <span className="highlight-chip">Version diff mode</span>
+                <span className="highlight-chip">ZIP download + previews</span>
+              </div>
+            </section>
 
-            <div className="features-section">
-              <h3>What you can do:</h3>
-              <ul className="features-list">
-                <li>📁 Browse all source files in an interactive file tree</li>
-                <li>📝 View LaTeX files with syntax highlighting</li>
-                <li>🖼️ Preview images and PDFs embedded in papers</li>
-                <li>💾 Download the complete source as a ZIP file</li>
-              </ul>
-            </div>
+            <section className="feature-grid-section" aria-label="Features">
+              <article className="feature-card">
+                <LandingFeatureVisual kind="browse" />
+                <h3>Browse complete source trees</h3>
+                <p>Navigate every file in the submission with fast search and rich syntax highlighting.</p>
+              </article>
+              <article className="feature-card">
+                <LandingFeatureVisual kind="clean" />
+                <h3>Paste cleaner code into LLMs</h3>
+                <p>Toggle comment removal in TeX files so copied snippets focus on the content you want.</p>
+              </article>
+              <article className="feature-card">
+                <LandingFeatureVisual kind="tokens" />
+                <h3>Estimate context size early</h3>
+                <p>Track token usage for full files and selected text before sending prompts.</p>
+              </article>
+              <article className="feature-card">
+                <LandingFeatureVisual kind="diff" />
+                <h3>Compare arXiv revisions</h3>
+                <p>Switch to diff mode, pick two versions, and inspect added, removed, and modified files.</p>
+              </article>
+            </section>
 
-            <div className="examples-section">
-              <h3>Try these example papers:</h3>
+            <section className="examples-section">
+              <div className="section-heading">
+                <h3>Open a demo paper</h3>
+                <p>Use one of these examples to jump straight into a real archive.</p>
+              </div>
               <div className="example-papers">
                 {EXAMPLE_PAPERS.map((paper) => (
                   <button
@@ -960,13 +984,13 @@ function App() {
                   </button>
                 ))}
               </div>
-            </div>
+            </section>
 
-            <div className="about-section">
+            <section className="about-section">
               <p>This website is maintained by <a href="https://dominik-peters.de">Dominik Peters</a> and is not affiliated with arXiv.org.</p>
               <p>First published: June 2025. Last updated: February 2026, version 2.0.</p>
               <p>Source code is available on <a href="https://github.com/DominikPeters/arxiv-source-browser">GitHub</a> under MIT license. The app was mostly implemented using Claude Code.</p>
-            </div>
+            </section>
           </div>
         )}
       </header>
