@@ -928,47 +928,48 @@ function App() {
         {appMode === 'browse' && files.length === 0 && !initialLoading && (
           <div className="start-page">
             <section className="landing-hero">
-              <p className="landing-eyebrow">arXiv source explorer</p>
-              <h2>Inspect source files, prepare clean snippets, and compare revisions.</h2>
+              <p className="landing-eyebrow">Read the source</p>
+              <h2>See how any arXiv paper was written, right in your browser.</h2>
               <p className="landing-description">
-                Open any arXiv source archive, browse all files, remove comments for cleaner LLM pasting,
-                estimate token count, and compare two versions with focused file-level diffs.
+                Ever wondered how a paper achieved a particular layout, or what changed between revisions?
+                Paste an arXiv link to browse the full LaTeX source with syntax highlighting.
+                You can also strip comments and get token estimates for easy copy-pasting into LLMs.
               </p>
               <div className="landing-highlights">
-                <span className="highlight-chip">Comment-free copy mode</span>
-                <span className="highlight-chip">Token count estimates</span>
-                <span className="highlight-chip">Version diff mode</span>
-                <span className="highlight-chip">ZIP download + previews</span>
+                <span className="highlight-chip">Syntax highlighting</span>
+                <span className="highlight-chip">Hide comments for LLM pasting</span>
+                <span className="highlight-chip">Token estimates</span>
+                <span className="highlight-chip">Version diffs</span>
               </div>
             </section>
 
             <section className="feature-grid-section" aria-label="Features">
               <article className="feature-card">
                 <LandingFeatureVisual kind="browse" />
-                <h3>Browse complete source trees</h3>
-                <p>Navigate every file in the submission with fast search and rich syntax highlighting.</p>
+                <h3>Browse the full source</h3>
+                <p>Explore every file in a paper's source archive with syntax highlighting and quick search.</p>
               </article>
               <article className="feature-card">
                 <LandingFeatureVisual kind="clean" />
-                <h3>Paste cleaner code into LLMs</h3>
-                <p>Toggle comment removal in TeX files so copied snippets focus on the content you want.</p>
+                <h3>Copy without comments</h3>
+                <p>Hide LaTeX comments with one click so you can paste clean excerpts straight into an LLM.</p>
               </article>
               <article className="feature-card">
                 <LandingFeatureVisual kind="tokens" />
-                <h3>Estimate context size early</h3>
-                <p>Track token usage for full files and selected text before sending prompts.</p>
+                <h3>Check token counts</h3>
+                <p>See how many tokens a file or selection will use before pasting it into a prompt.</p>
               </article>
               <article className="feature-card">
                 <LandingFeatureVisual kind="diff" />
-                <h3>Compare arXiv revisions</h3>
-                <p>Switch to diff mode, pick two versions, and inspect added, removed, and modified files.</p>
+                <h3>Diff between versions</h3>
+                <p>Pick any two versions of a paper and see exactly what the authors changed.</p>
               </article>
             </section>
 
             <section className="examples-section">
               <div className="section-heading">
-                <h3>Open a demo paper</h3>
-                <p>Use one of these examples to jump straight into a real archive.</p>
+                <h3>Try it out</h3>
+                <p>Click a paper to start browsing its source.</p>
               </div>
               <div className="example-papers">
                 {EXAMPLE_PAPERS.map((paper) => (
@@ -988,8 +989,8 @@ function App() {
 
             <section className="about-section">
               <p>This website is maintained by <a href="https://dominik-peters.de">Dominik Peters</a> and is not affiliated with arXiv.org.</p>
-              <p>First published: June 2025. Last updated: February 2026, version 2.0.</p>
-              <p>Source code is available on <a href="https://github.com/DominikPeters/arxiv-source-browser">GitHub</a> under MIT license. The app was mostly implemented using Claude Code.</p>
+              <p>First published: June 2025. Last updated: February 2026, version 2.1.</p>
+              <p>Source code is available on <a href="https://github.com/DominikPeters/arxiv-source-browser">GitHub</a> under MIT license. The app was mostly implemented using Claude Code and Codex.</p>
             </section>
           </div>
         )}
