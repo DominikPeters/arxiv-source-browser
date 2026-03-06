@@ -787,7 +787,7 @@ function App() {
     const url = URL.createObjectURL(zipBlob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'arxiv-source.zip'
+    a.download = `arxiv-${paperId}.zip`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
