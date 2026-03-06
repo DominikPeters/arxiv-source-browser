@@ -27,6 +27,34 @@ interface OutlineJumpRequest {
   token: number
 }
 
+interface RecentPaper {
+  id: string
+  title: string | null
+}
+
+const RECENT_PAPERS_KEY = 'recentPapers'
+const MAX_RECENT_PAPERS = 4
+
+function loadRecentPapers(): RecentPaper[] {
+  try {
+    const stored = localStorage.getItem(RECENT_PAPERS_KEY)
+    return stored ? JSON.parse(stored) : []
+  } catch {
+    return []
+  }
+}
+
+function saveRecentPaper(id: string, title: string | null): RecentPaper[] {
+  const papers = loadRecentPapers().filter(p => p.id !== id)
+  const updated = [{ id, title }, ...papers].slice(0, MAX_RECENT_PAPERS)
+  try {
+    localStorage.setItem(RECENT_PAPERS_KEY, JSON.stringify(updated))
+  } catch {
+    // localStorage unavailable
+  }
+  return updated
+}
+
 interface BrowseLoadOptions {
   skipHistory?: boolean
 }
@@ -88,31 +116,42 @@ const EXAMPLE_PAPERS: ExamplePaper[] = [
   }
 ]
 
-async function findMainTexFile(files: FileEntry[]): Promise<FileEntry | null> {
+function extractLatexTitle(content: string): string | null {
+  const match = content.match(/\\title\s*(?:\[[^\]]*\])?\s*\{([\s\S]*?)\}/)
+  if (!match) return null
+  return match[1].replace(/\\\\/g, ' ').replace(/\s+/g, ' ').trim() || null
+}
+
+async function findMainTexFile(files: FileEntry[]): Promise<{ file: FileEntry | null; title: string | null }> {
   const texFiles = files.filter(file =>
     file.name.toLowerCase().endsWith('.tex')
   )
 
   if (texFiles.length === 0) {
-    return null
+    return { file: null, title: null }
   }
 
   if (texFiles.length === 1) {
-    return texFiles[0]
+    try {
+      const content = await texFiles[0].zipFile.async('string')
+      return { file: texFiles[0], title: extractLatexTitle(content) }
+    } catch {
+      return { file: texFiles[0], title: null }
+    }
   }
 
   for (const file of texFiles) {
     try {
       const content = await file.zipFile.async('string')
       if (content.includes('\\begin{document}')) {
-        return file
+        return { file, title: extractLatexTitle(content) }
       }
     } catch (error) {
       console.error('Error reading file content:', error)
     }
   }
 
-  return null
+  return { file: null, title: null }
 }
 
 async function parseZipBlob(blob: Blob): Promise<{ entries: FileEntry[]; rawBlob: Blob }> {
@@ -255,6 +294,7 @@ function App() {
   const [zipBlob, setZipBlob] = useState<Blob | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [paperId, setPaperId] = useState('')
+  const [recentPapers, setRecentPapers] = useState<RecentPaper[]>(() => loadRecentPapers())
   const [fileBrowserCollapsed, setFileBrowserCollapsed] = useState(false)
   const [hideCommentsInViewer, setHideCommentsInViewer] = useState(false)
   const [texOutline, setTexOutline] = useState<TexOutlineEntry[]>([])
@@ -339,9 +379,13 @@ function App() {
         nextSelectedFile = parsed.entries.find((file) => file.path === currentUrlState.filePath) || null
       }
 
+      let title: string | null = null
       if (!nextSelectedFile) {
-        nextSelectedFile = await findMainTexFile(parsed.entries)
+        const result = await findMainTexFile(parsed.entries)
+        nextSelectedFile = result.file
+        title = result.title
       }
+      setRecentPapers(saveRecentPaper(arxivId, title))
 
       setSelectedFile(nextSelectedFile)
 
@@ -927,6 +971,36 @@ function App() {
         )}
         {appMode === 'browse' && files.length === 0 && !initialLoading && (
           <div className="start-page">
+            {recentPapers.length > 0 && (
+              <section className="examples-section">
+                <div className="section-heading recent-papers-heading">
+                  <h3>Recently viewed</h3>
+                  <button
+                    className="clear-history-button"
+                    onClick={() => {
+                      localStorage.removeItem(RECENT_PAPERS_KEY)
+                      setRecentPapers([])
+                    }}
+                  >
+                    Clear history
+                  </button>
+                </div>
+                <div className="example-papers">
+                  {recentPapers.map((paper) => (
+                    <button
+                      key={paper.id}
+                      className="example-paper"
+                      onClick={() => handleExampleClick(paper.id)}
+                      disabled={loading}
+                    >
+                      <div className="paper-id">{paper.id}</div>
+                      {paper.title && <div className="paper-title">{paper.title}</div>}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
             <section className="landing-hero">
               <p className="landing-eyebrow">Read the source</p>
               <h2>See how any arXiv paper was written, right in your browser.</h2>
