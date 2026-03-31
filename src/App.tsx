@@ -294,6 +294,7 @@ function App() {
   const [zipBlob, setZipBlob] = useState<Blob | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [paperId, setPaperId] = useState('')
+  const [loadedArxivId, setLoadedArxivId] = useState('')
   const [recentPapers, setRecentPapers] = useState<RecentPaper[]>(() => loadRecentPapers())
   const [fileBrowserCollapsed, setFileBrowserCollapsed] = useState(false)
   const [hideCommentsInViewer, setHideCommentsInViewer] = useState(false)
@@ -371,6 +372,7 @@ function App() {
       setZipBlob(parsed.rawBlob)
       setFiles(parsed.entries)
       setPaperId(arxivId)
+      setLoadedArxivId(arxivId)
 
       const currentUrlState = parseURL(window.location.pathname)
       let nextSelectedFile: FileEntry | null = null
@@ -945,6 +947,7 @@ function App() {
               loading={loading}
               value={paperId}
               onChange={setPaperId}
+              loadedArxivId={loadedArxivId}
             />
           </div>
           <button
