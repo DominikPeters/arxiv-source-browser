@@ -1039,6 +1039,7 @@
 
 .download-file-button,
 .copy-file-button,
+.expand-inputs-button,
 .comment-toggle-button {
   display: flex;
   align-items: center;
@@ -1054,11 +1055,17 @@
 
 .download-file-button:hover,
 .copy-file-button:hover,
+.expand-inputs-button:hover:not(:disabled),
 .comment-toggle-button:hover {
   background: var(--secondary-color);
   border-color: var(--secondary-color);
   color: white;
   box-shadow: var(--shadow-md);
+}
+
+.expand-inputs-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .comment-toggle-button.active {

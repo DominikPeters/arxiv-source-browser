@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Copy, Check, Percent } from 'lucide-react'
+import { Download, Copy, Check, Percent, Combine } from 'lucide-react'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { estimateTokenCount } from 'tokenx'
@@ -15,6 +15,7 @@ import type { CodeViewerMode } from '../codemirror/language'
 import {
   createLatexLinkClickExtension,
   createLatexLinkDecorationsExtension,
+  collectLatexLinkSpans,
   type LatexLinkSpan,
 } from '../codemirror/latexLinks'
 
@@ -49,15 +50,44 @@ async function findLabelInFiles(label: string): Promise<{ file: FileEntry; lineN
 
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.pdf', '.eps', '.svg', '.gif']
 
-function findFileByLatexPath(inputPath: string, isImage: boolean): FileEntry | null {
+function normalizePath(path: string): string {
+  const parts: string[] = []
+  for (const segment of path.split('/')) {
+    if (!segment || segment === '.') {
+      continue
+    }
+    if (segment === '..') {
+      parts.pop()
+      continue
+    }
+    parts.push(segment)
+  }
+  return parts.join('/')
+}
+
+function getDirectoryPath(path: string): string {
+  const lastSlash = path.lastIndexOf('/')
+  return lastSlash === -1 ? '' : path.slice(0, lastSlash)
+}
+
+function findFileByLatexPath(inputPath: string, isImage: boolean, baseFile?: FileEntry): FileEntry | null {
   let cleanPath = inputPath.trim()
   if (cleanPath.startsWith('./')) {
     cleanPath = cleanPath.substring(2)
   }
 
+  const baseDirectory = baseFile ? getDirectoryPath(baseFile.path || baseFile.name) : ''
+  const buildPathCandidates = (path: string) => {
+    const candidates = [path]
+    if (baseDirectory) {
+      candidates.unshift(normalizePath(`${baseDirectory}/${path}`))
+    }
+    return Array.from(new Set(candidates))
+  }
+
   if (isImage) {
     const hasExtension = IMAGE_EXTENSIONS.some((ext) => cleanPath.toLowerCase().endsWith(ext))
-    const pathsToTry = hasExtension ? [cleanPath] : IMAGE_EXTENSIONS.map((ext) => cleanPath + ext)
+    const pathsToTry = hasExtension ? buildPathCandidates(cleanPath) : IMAGE_EXTENSIONS.flatMap((ext) => buildPathCandidates(cleanPath + ext))
 
     for (const pathToTry of pathsToTry) {
       for (const file of currentFiles) {
@@ -79,14 +109,16 @@ function findFileByLatexPath(inputPath: string, isImage: boolean): FileEntry | n
     cleanPath += '.tex'
   }
 
-  for (const file of currentFiles) {
-    if (file.name === cleanPath || file.path === cleanPath) {
-      return file
-    }
+  for (const pathToTry of buildPathCandidates(cleanPath)) {
+    for (const file of currentFiles) {
+      if (file.name === pathToTry || file.path === pathToTry) {
+        return file
+      }
 
-    const fileName = file.name.split('/').pop() || ''
-    if (fileName === cleanPath) {
-      return file
+      const fileName = file.name.split('/').pop() || ''
+      if (fileName === pathToTry) {
+        return file
+      }
     }
   }
 
@@ -102,6 +134,15 @@ interface FileViewerProps {
   onHideCommentsChange?: (hideComments: boolean) => void
   onVisibleLineChange?: (lineNumber: number) => void
   scrollToLine?: { lineNumber: number; token: number } | null
+}
+
+interface SourceContentSegment {
+  text: string
+  file: FileEntry
+}
+
+interface InputCommandSpan extends LatexLinkSpan {
+  baseFile: FileEntry
 }
 
 function FileViewer({
@@ -120,6 +161,8 @@ function FileViewer({
   const [pdfUrl, setPdfUrl] = useState<string>('')
   const [copySuccess, setCopySuccess] = useState(false)
   const [hideComments, setHideComments] = useState(false)
+  const [expandedSegments, setExpandedSegments] = useState<SourceContentSegment[] | null>(null)
+  const [expandingInputs, setExpandingInputs] = useState(false)
   const [selectionTokenCount, setSelectionTokenCount] = useState<number | null>(null)
   const [hasActiveSelection, setHasActiveSelection] = useState(false)
 
@@ -131,12 +174,54 @@ function FileViewer({
   const visibleLineRafRef = useRef<number | null>(null)
   const lastVisibleLineRef = useRef<number | null>(null)
 
+  const sourceSegments = useMemo<SourceContentSegment[]>(() => {
+    return expandedSegments ?? [{ text: content, file }]
+  }, [content, expandedSegments, file])
+
+  const sourceContent = useMemo(() => {
+    return sourceSegments.map((segment) => segment.text).join('')
+  }, [sourceSegments])
+
   const displayContent = useMemo(() => {
     if (fileType === 'tex' && hideComments) {
-      return stripLatexComments(content)
+      return stripLatexComments(sourceContent)
     }
-    return content
-  }, [content, fileType, hideComments])
+    return sourceContent
+  }, [sourceContent, fileType, hideComments])
+
+  const inputCommandSpans = useMemo<InputCommandSpan[]>(() => {
+    if (fileType !== 'tex') {
+      return []
+    }
+    let offset = 0
+    const spans: InputCommandSpan[] = []
+    for (const segment of sourceSegments) {
+      const segmentSpans = collectLatexLinkSpans(segment.text, 'tex').filter((span) => span.kind === 'input')
+      for (const span of segmentSpans) {
+        spans.push({
+          ...span,
+          from: span.from + offset,
+          to: span.to + offset,
+          baseFile: segment.file,
+        })
+      }
+      offset += segment.text.length
+    }
+    return spans
+  }, [fileType, sourceSegments])
+
+  const getBaseFileForSourcePosition = useCallback((position: number): FileEntry => {
+    let offset = 0
+    for (let i = 0; i < sourceSegments.length; i++) {
+      const segment = sourceSegments[i]
+      const segmentEnd = offset + segment.text.length
+      if (position >= offset && (position < segmentEnd || i === sourceSegments.length - 1)) {
+        return segment.file
+      }
+      offset = segmentEnd
+    }
+    return file
+  }, [file, sourceSegments])
 
   const fullDocumentTokenCount = useMemo(() => {
     if (fileType === 'image' || fileType === 'pdf') {
@@ -325,7 +410,11 @@ function FileViewer({
       }
 
       if (link.kind === 'input' || link.kind === 'graphics') {
-        const linkedFile = findFileByLatexPath(link.payload, link.kind === 'graphics')
+        const linkedFile = findFileByLatexPath(
+          link.payload,
+          link.kind === 'graphics',
+          getBaseFileForSourcePosition(link.from)
+        )
         if (linkedFile) {
           onFileSelect(linkedFile)
         }
@@ -374,7 +463,7 @@ function FileViewer({
         }
       }
     },
-    [content, file.path, files, hideComments, onFileSelect, onError, scrollToLineNumber]
+    [content, file.path, files, getBaseFileForSourcePosition, hideComments, onFileSelect, onError, scrollToLineNumber]
   )
 
   const editorInteractionExtension = useMemo(() => {
@@ -412,8 +501,10 @@ function FileViewer({
   useEffect(() => {
     setImageUrl('')
     setContent('')
+    setExpandedSegments(null)
     setPdfUrl('')
     setHideComments(false)
+    setExpandingInputs(false)
     setHasActiveSelection(false)
     setSelectionTokenCount(null)
 
@@ -607,18 +698,72 @@ function FileViewer({
   }
 
   const getCurrentTextContent = async () => {
-    let textContent = content
+    let textContent = sourceContent
     if (!textContent && file.content === null) {
       textContent = await file.zipFile.async('text')
     }
     return fileType === 'tex' && hideComments ? stripLatexComments(textContent) : textContent
   }
 
+  const expandInputCommands = async () => {
+    if (fileType !== 'tex' || inputCommandSpans.length === 0 || expandingInputs) {
+      return
+    }
+
+    setExpandingInputs(true)
+    try {
+      let expandedCount = 0
+      const nextSegments: SourceContentSegment[] = []
+
+      for (const segment of sourceSegments) {
+        let cursor = 0
+        const segmentSpans = collectLatexLinkSpans(segment.text, 'tex').filter((span) => span.kind === 'input')
+
+        for (const span of segmentSpans) {
+          if (span.from > cursor) {
+            nextSegments.push({ text: segment.text.slice(cursor, span.from), file: segment.file })
+          }
+
+          const linkedFile = findFileByLatexPath(span.payload, false, segment.file)
+          if (!linkedFile) {
+            nextSegments.push({ text: segment.text.slice(span.from, span.to), file: segment.file })
+            cursor = span.to
+            continue
+          }
+
+          const linkedContent = linkedFile.content !== null
+            ? linkedFile.content
+            : await linkedFile.zipFile.async('text')
+
+          linkedFile.content = linkedContent
+          nextSegments.push({ text: linkedContent, file: linkedFile })
+          expandedCount++
+          cursor = span.to
+        }
+
+        if (cursor < segment.text.length) {
+          nextSegments.push({ text: segment.text.slice(cursor), file: segment.file })
+        }
+      }
+
+      setExpandedSegments(nextSegments)
+
+      if (expandedCount === 0) {
+        onError?.('No input files could be resolved')
+      }
+    } catch (error) {
+      console.error('Error expanding input commands:', error)
+      onError?.('Failed to expand input commands')
+    } finally {
+      setExpandingInputs(false)
+    }
+  }
+
   const downloadFile = async () => {
     try {
       let blob: Blob
 
-      if (fileType === 'tex' && hideComments) {
+      if (fileType === 'tex' && (hideComments || expandedSegments)) {
         const textContent = await getCurrentTextContent()
         blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' })
       } else {
@@ -714,6 +859,17 @@ function FileViewer({
             aria-pressed={hideComments}
           >
             <Percent size={16} strokeWidth={1.75} aria-hidden="true" />
+          </button>
+        )}
+        {inputCommandSpans.length > 0 && (
+          <button
+            className="expand-inputs-button"
+            onClick={expandInputCommands}
+            disabled={expandingInputs}
+            data-tooltip={`Expand ${inputCommandSpans.length.toLocaleString()} input ${inputCommandSpans.length === 1 ? 'command' : 'commands'}`}
+            aria-label={`Expand ${inputCommandSpans.length.toLocaleString()} input ${inputCommandSpans.length === 1 ? 'command' : 'commands'}`}
+          >
+            <Combine size={16} strokeWidth={1.75} aria-hidden="true" />
           </button>
         )}
         {shouldShowCopyButton() && (
