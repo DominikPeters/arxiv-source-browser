@@ -1878,6 +1878,45 @@
 }
 
 /* Responsive Design */
+/* Landscape on short screens: restore side-by-side layout */
+@media (orientation: landscape) and (max-height: 520px) {
+  .app-content.has-files-content {
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: 1fr;
+    height: 100%;
+    margin: 0;
+    width: 100%;
+    border-radius: 0;
+  }
+
+  .file-browser {
+    border-right: 1px solid var(--border-primary);
+    border-bottom: none;
+  }
+
+  .file-tree {
+    max-height: none !important;
+  }
+
+  .file-browser-panels.with-outline {
+    max-height: none !important;
+  }
+
+  .app-header {
+    padding: 0.3rem 0.75rem;
+  }
+
+  .app-header h1 {
+    font-size: 1.25rem;
+  }
+
+  /* Collapse mode toggle labels in landscape to save header space */
+  .mode-toggle-button {
+    font-size: 0.7rem;
+    padding: 0.35rem 0.5rem;
+  }
+}
+
 @media (max-width: 1024px) {
   .app-content {
     grid-template-columns: 280px 1fr;
@@ -1892,7 +1931,7 @@
   .diff-version-select {
     min-width: 190px;
   }
-  
+
   .app-header {
     padding: 0.75rem 1rem;
   }
@@ -1996,10 +2035,19 @@
   
   .arxiv-url-input {
     width: 100%;
+    font-size: 1rem; /* 16px prevents iOS auto-zoom on focus */
   }
 
   .submit-button {
     padding: 0.75rem 1rem;
+  }
+
+  .file-actions {
+    flex-shrink: 0;
+  }
+
+  .token-estimate {
+    display: none;
   }
   
   .app-header {
@@ -2027,6 +2075,15 @@
     min-width: auto;
   }
   
+  /* Shrink "Open on arXiv" chip to icon-only on mobile */
+  .arxiv-open-chip span {
+    display: none;
+  }
+
+  .arxiv-url-input.with-chip {
+    padding-right: 3.5rem;
+  }
+
   /* Start page responsive styles */
   .start-page {
     margin: 1rem auto 0.5rem auto;
