@@ -7,6 +7,7 @@
  * - Explicit source download: ?action=source&id=<versioned-id>
  * - Version metadata: ?action=versions&id=<id-or-arxiv-url>
  * - Lightweight metadata: ?action=meta&id=<id-or-arxiv-url>
+ * - Metadata search: ?action=search&q=<query>
  */
 
 // Error reporting disabled for production security
@@ -101,6 +102,313 @@ function fetchText($url) {
     }
 
     return $data;
+}
+
+/**
+ * Locate the optional arXiv metadata mirror.
+ */
+function getMetadataDbPath() {
+    $configured = getenv('ARXIV_METADATA_DB');
+    if ($configured && is_readable($configured)) {
+        return $configured;
+    }
+
+    $candidates = [
+        __DIR__ . '/../data/arxiv-metadata.sqlite',
+        __DIR__ . '/../var/arxiv-metadata.sqlite',
+    ];
+
+    foreach ($candidates as $candidate) {
+        if (is_readable($candidate)) {
+            return $candidate;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Build a SQLite URI filename for immutable read-only access.
+ */
+function buildSqliteImmutableUri($path) {
+    $realPath = realpath($path);
+    if ($realPath === false) {
+        return null;
+    }
+
+    return 'file:' . str_replace('%2F', '/', rawurlencode($realPath)) . '?mode=ro&immutable=1';
+}
+
+/**
+ * Open the metadata mirror read-only when available.
+ */
+function openMetadataDb() {
+    $dbPath = getMetadataDbPath();
+    if (!$dbPath) {
+        return null;
+    }
+
+    $immutableUri = buildSqliteImmutableUri($dbPath);
+    if ($immutableUri !== null && extension_loaded('pdo_sqlite')) {
+        try {
+            $db = new PDO('sqlite:' . $immutableUri, null, null, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_TIMEOUT => 3,
+            ]);
+            $db->exec('PRAGMA query_only = ON');
+            return $db;
+        } catch (Exception $e) {
+            // Fall back to SQLite3 below for PHP builds without URI filename support.
+        }
+    }
+
+    if (extension_loaded('sqlite3')) {
+        try {
+            $db = new SQLite3($dbPath, SQLITE3_OPEN_READONLY);
+            $db->busyTimeout(3000);
+            return $db;
+        } catch (Exception $e) {
+            error_log('Could not open arXiv metadata database: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Decode a JSON array column defensively.
+ */
+function decodeJsonArray($value) {
+    if (!is_string($value) || $value === '') {
+        return [];
+    }
+
+    $decoded = json_decode($value, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+/**
+ * Map a metadata database row to API shape.
+ */
+function mapPaperMetadataRow($row) {
+    if (!$row) {
+        return null;
+    }
+
+    return [
+        'id' => $row['id'],
+        'oaiIdentifier' => $row['oai_identifier'] ?? null,
+        'datestamp' => $row['datestamp'] ?? null,
+        'created' => $row['created'] ?? null,
+        'updated' => $row['updated'] ?? null,
+        'title' => $row['title'] ?? null,
+        'authors' => decodeJsonArray($row['authors_json'] ?? null),
+        'primaryCategory' => $row['primary_category'] ?? null,
+        'categories' => decodeJsonArray($row['categories_json'] ?? null),
+        'doi' => $row['doi'] ?? null,
+        'journalRef' => $row['journal_ref'] ?? null,
+        'license' => $row['license'] ?? null,
+    ];
+}
+
+/**
+ * Look up paper metadata in the local mirror.
+ */
+function lookupPaperMetadata($id) {
+    $db = openMetadataDb();
+    if (!$db) {
+        return null;
+    }
+
+    $normalized = normalizeArxivId($id);
+    $baseId = $normalized ? $normalized['baseId'] : $id;
+
+    if ($db instanceof PDO) {
+        $stmt = $db->prepare('SELECT * FROM papers WHERE id = :id AND deleted = 0 LIMIT 1');
+        $stmt->bindValue(':id', $baseId, PDO::PARAM_STR);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    } else {
+        $stmt = $db->prepare('SELECT * FROM papers WHERE id = :id AND deleted = 0 LIMIT 1');
+        $stmt->bindValue(':id', $baseId, SQLITE3_TEXT);
+        $result = $stmt->execute();
+        $row = $result ? $result->fetchArray(SQLITE3_ASSOC) : false;
+    }
+
+    return mapPaperMetadataRow($row ?: null);
+}
+
+/**
+ * Tokenize search text for safe FTS query construction.
+ */
+function tokenizeFtsText($text) {
+    preg_match_all('/[\p{L}\p{N}_]+/u', mb_strtolower($text, 'UTF-8'), $matches);
+    return array_values(array_filter($matches[0], function ($term) {
+        return mb_strlen($term, 'UTF-8') >= 2;
+    }));
+}
+
+/**
+ * Append unquoted query text as FTS prefix terms.
+ */
+function appendFtsPrefixTerms(&$parts, $text, $maxParts) {
+    foreach (tokenizeFtsText($text) as $term) {
+        if (count($parts) >= $maxParts) {
+            return;
+        }
+        $parts[] = $term . '*';
+    }
+}
+
+/**
+ * Tokenize a search query into safe FTS clauses.
+ *
+ * Unquoted terms use prefix matching for autocomplete. Quoted terms use exact
+ * phrase matching, e.g. "attention is all" vaswani => "attention is all" vaswani*
+ */
+function buildFtsQuery($query) {
+    $query = (string) $query;
+    $parts = [];
+    $maxParts = 8;
+    $offset = 0;
+
+    preg_match_all('/"([^"]+)"/u', $query, $matches, PREG_OFFSET_CAPTURE);
+    foreach ($matches[0] as $index => $match) {
+        if (count($parts) >= $maxParts) {
+            break;
+        }
+
+        $matchText = $match[0];
+        $matchOffset = $match[1];
+        appendFtsPrefixTerms($parts, substr($query, $offset, $matchOffset - $offset), $maxParts);
+
+        if (count($parts) < $maxParts) {
+            $phraseText = $matches[1][$index][0];
+            $phraseTerms = array_slice(tokenizeFtsText($phraseText), 0, 8);
+            if ($phraseTerms !== []) {
+                $parts[] = '"' . implode(' ', $phraseTerms) . '"';
+            }
+        }
+
+        $offset = $matchOffset + strlen($matchText);
+    }
+
+    appendFtsPrefixTerms($parts, substr($query, $offset), $maxParts);
+
+    return implode(' ', $parts);
+}
+
+/**
+ * Avoid scanning the ID index for ordinary title/author text.
+ */
+function looksLikeArxivIdPrefix($query) {
+    return preg_match('/^[0-9]{1,4}(?:\.[0-9]{0,5})?$/', $query) === 1
+        || preg_match('/^[a-z-]+\/[0-9]*$/i', $query) === 1;
+}
+
+/**
+ * Search metadata mirror for autocomplete suggestions.
+ */
+function searchPaperMetadata($query, $limit = 10) {
+    $db = openMetadataDb();
+    if (!$db) {
+        return [];
+    }
+
+    $query = trim((string) $query);
+    if ($query === '' || mb_strlen($query, 'UTF-8') < 2) {
+        return [];
+    }
+
+    $limit = max(1, min(20, (int) $limit));
+    $seen = [];
+    $results = [];
+
+    if (looksLikeArxivIdPrefix($query)) {
+        if ($db instanceof PDO) {
+            $idStmt = $db->prepare(
+                'SELECT * FROM papers WHERE deleted = 0 AND id LIKE :idPrefix ORDER BY id LIMIT :limit'
+            );
+            $idStmt->bindValue(':idPrefix', $query . '%', PDO::PARAM_STR);
+            $idStmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $idStmt->execute();
+
+            while ($row = $idStmt->fetch(PDO::FETCH_ASSOC)) {
+                $metadata = mapPaperMetadataRow($row);
+                if (!$metadata) {
+                    continue;
+                }
+                $seen[$metadata['id']] = true;
+                $results[] = $metadata;
+            }
+        } else {
+            $idStmt = $db->prepare(
+                'SELECT * FROM papers WHERE deleted = 0 AND id LIKE :idPrefix ORDER BY id LIMIT :limit'
+            );
+            $idStmt->bindValue(':idPrefix', $query . '%', SQLITE3_TEXT);
+            $idStmt->bindValue(':limit', $limit, SQLITE3_INTEGER);
+            $idResult = $idStmt->execute();
+
+            while ($idResult && ($row = $idResult->fetchArray(SQLITE3_ASSOC))) {
+                $metadata = mapPaperMetadataRow($row);
+                if (!$metadata) {
+                    continue;
+                }
+                $seen[$metadata['id']] = true;
+                $results[] = $metadata;
+            }
+        }
+    }
+
+    $ftsQuery = buildFtsQuery($query);
+    if ($ftsQuery !== '' && count($results) < $limit) {
+        $remaining = $limit - count($results);
+        $ftsSql = <<<'SQL'
+SELECT p.*
+FROM paper_fts f
+JOIN papers p ON p.rowid = f.rowid
+WHERE paper_fts MATCH :query AND p.deleted = 0
+LIMIT :limit
+SQL;
+
+        try {
+            if ($db instanceof PDO) {
+                $ftsStmt = $db->prepare($ftsSql);
+                $ftsStmt->bindValue(':query', $ftsQuery, PDO::PARAM_STR);
+                $ftsStmt->bindValue(':limit', $remaining, PDO::PARAM_INT);
+                $ftsStmt->execute();
+
+                while ($row = $ftsStmt->fetch(PDO::FETCH_ASSOC)) {
+                    $metadata = mapPaperMetadataRow($row);
+                    if (!$metadata || isset($seen[$metadata['id']])) {
+                        continue;
+                    }
+                    $seen[$metadata['id']] = true;
+                    $results[] = $metadata;
+                }
+            } else {
+                $ftsStmt = $db->prepare($ftsSql);
+                $ftsStmt->bindValue(':query', $ftsQuery, SQLITE3_TEXT);
+                $ftsStmt->bindValue(':limit', $remaining, SQLITE3_INTEGER);
+                $ftsResult = $ftsStmt->execute();
+
+                while ($ftsResult && ($row = $ftsResult->fetchArray(SQLITE3_ASSOC))) {
+                    $metadata = mapPaperMetadataRow($row);
+                    if (!$metadata || isset($seen[$metadata['id']])) {
+                        continue;
+                    }
+                    $seen[$metadata['id']] = true;
+                    $results[] = $metadata;
+                }
+            }
+        } catch (Exception $e) {
+            error_log('Metadata search failed: ' . $e->getMessage());
+        }
+    }
+
+    return $results;
 }
 
 /**
@@ -622,13 +930,25 @@ try {
             jsonResponse(400, ['ok' => false, 'error' => 'Invalid arXiv URL or ID format']);
         }
 
-        $title = fetchPaperTitle($normalized['id']);
+        $metadata = lookupPaperMetadata($normalized['baseId']);
+        $title = $metadata['title'] ?? fetchPaperTitle($normalized['id']);
         jsonResponse(200, [
             'ok' => true,
             'id' => $normalized['id'],
             'baseId' => $normalized['baseId'],
             'version' => $normalized['version'],
+            'metadata' => $metadata,
             'title' => $title,
+        ]);
+    }
+
+    if ($action === 'search') {
+        $query = $_GET['q'] ?? '';
+        $limit = $_GET['limit'] ?? 10;
+        jsonResponse(200, [
+            'ok' => true,
+            'query' => (string) $query,
+            'results' => searchPaperMetadata($query, $limit),
         ]);
     }
 
@@ -636,4 +956,3 @@ try {
 } catch (Exception $e) {
     jsonResponse(500, ['ok' => false, 'error' => $e->getMessage()]);
 }
-

@@ -6,7 +6,7 @@ import Settings from './components/Settings'
 import Toast from './components/Toast'
 import LandingFeatureVisual from './components/LandingFeatureVisual'
 import type { DiffModeEntry } from './components/DiffMode'
-import type { AppMode, DiffVersion, FileEntry, DiffViewLayout } from './types'
+import type { AppMode, DiffVersion, FileEntry, DiffViewLayout, PaperMetadata } from './types'
 import { parseURL, buildURL, buildDiffURL, extractArxivId, getFileType, splitArxivVersion } from './types'
 import { BASE_URL, API_URL } from './config'
 import { Settings as SettingsIcon, Loader2, Columns2, GitCompare } from 'lucide-react'
@@ -53,6 +53,47 @@ function saveRecentPaper(id: string, title: string | null): RecentPaper[] {
     // localStorage unavailable
   }
   return updated
+}
+
+async function fetchPaperMetadata(arxivId: string): Promise<PaperMetadata | null> {
+  try {
+    const response = await fetch(`${API_URL}?action=meta&id=${encodeURIComponent(arxivId)}`)
+    if (!response.ok) {
+      return null
+    }
+
+    const payload = await response.json() as {
+      ok?: boolean
+      metadata?: PaperMetadata | null
+      title?: string | null
+      baseId?: string
+    }
+
+    if (payload.ok && payload.metadata) {
+      return payload.metadata
+    }
+
+    if (payload.ok && payload.title && payload.baseId) {
+      return {
+        id: payload.baseId,
+        oaiIdentifier: null,
+        datestamp: null,
+        created: null,
+        updated: null,
+        title: payload.title,
+        authors: [],
+        primaryCategory: null,
+        categories: [],
+        doi: null,
+        journalRef: null,
+        license: null,
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching paper metadata:', error)
+  }
+
+  return null
 }
 
 interface BrowseLoadOptions {
@@ -120,6 +161,30 @@ function extractLatexTitle(content: string): string | null {
   const match = content.match(/\\title\s*(?:\[[^\]]*\])?\s*\{([\s\S]*?)\}/)
   if (!match) return null
   return match[1].replace(/\\\\/g, ' ').replace(/\s+/g, ' ').trim() || null
+}
+
+function formatAuthors(authors: string[], maxAuthors = 4): string | null {
+  if (authors.length === 0) {
+    return null
+  }
+
+  if (authors.length <= maxAuthors) {
+    return authors.join(', ')
+  }
+
+  return `${authors.slice(0, maxAuthors).join(', ')} et al.`
+}
+
+function buildBrowseDocumentTitle(paperId: string, selectedFile: FileEntry | null, metadata: PaperMetadata | null): string {
+  const titleParts: string[] = []
+  if (selectedFile) {
+    titleParts.push(selectedFile.name)
+  }
+  if (metadata?.title) {
+    titleParts.push(metadata.title)
+  }
+  titleParts.push(`arXiv:${paperId}`, 'arXiv Source Browser')
+  return titleParts.join(' - ')
 }
 
 async function findMainTexFile(files: FileEntry[]): Promise<{ file: FileEntry | null; title: string | null }> {
@@ -295,6 +360,8 @@ function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [paperId, setPaperId] = useState('')
   const [loadedArxivId, setLoadedArxivId] = useState('')
+  const [paperMetadata, setPaperMetadata] = useState<PaperMetadata | null>(null)
+  const [paperMetadataCollapsed, setPaperMetadataCollapsed] = useState(false)
   const [recentPapers, setRecentPapers] = useState<RecentPaper[]>(() => loadRecentPapers())
   const [fileBrowserCollapsed, setFileBrowserCollapsed] = useState(false)
   const [hideCommentsInViewer, setHideCommentsInViewer] = useState(false)
@@ -361,18 +428,24 @@ function App() {
         throw new Error('Invalid arXiv URL or ID')
       }
 
+      const metadataPromise = fetchPaperMetadata(arxivId)
       const response = await fetch(`${API_URL}?url=${encodeURIComponent(url)}`)
       if (!response.ok) {
         throw new Error('Failed to fetch arXiv source')
       }
 
       const blob = await response.blob()
-      const parsed = await parseZipBlob(blob)
+      const [parsed, metadata] = await Promise.all([
+        parseZipBlob(blob),
+        metadataPromise,
+      ])
 
       setZipBlob(parsed.rawBlob)
       setFiles(parsed.entries)
       setPaperId(arxivId)
       setLoadedArxivId(arxivId)
+      setPaperMetadata(metadata)
+      setPaperMetadataCollapsed(false)
 
       const currentUrlState = parseURL(window.location.pathname)
       let nextSelectedFile: FileEntry | null = null
@@ -381,12 +454,15 @@ function App() {
         nextSelectedFile = parsed.entries.find((file) => file.path === currentUrlState.filePath) || null
       }
 
-      let title: string | null = null
-      if (!nextSelectedFile) {
+      let latexTitle: string | null = null
+      if (!nextSelectedFile || !metadata?.title) {
         const result = await findMainTexFile(parsed.entries)
-        nextSelectedFile = result.file
-        title = result.title
+        if (!nextSelectedFile) {
+          nextSelectedFile = result.file
+        }
+        latexTitle = result.title
       }
+      const title = metadata?.title || latexTitle
       setRecentPapers(saveRecentPaper(arxivId, title))
 
       setSelectedFile(nextSelectedFile)
@@ -398,6 +474,7 @@ function App() {
     } catch (error) {
       console.error('Error fetching arXiv source:', error)
       setToastMessage('Error fetching arXiv source. Please check the URL and try again.')
+      setPaperMetadata(null)
     } finally {
       setLoading(false)
       setInitialLoading(false)
@@ -481,6 +558,7 @@ function App() {
 
       setDiffBaseId(versionsPayload.baseId)
       setPaperId(versionsPayload.baseId)
+      setPaperMetadata(null)
       setDiffVersions(versionsPayload.versions)
       setAppMode('diff')
 
@@ -634,6 +712,9 @@ function App() {
         setSelectedFile(null)
         setZipBlob(null)
         setPaperId('')
+        setLoadedArxivId('')
+        setPaperMetadata(null)
+        setPaperMetadataCollapsed(false)
         setInitialLoading(false)
       } else if (urlState.arxivId === paperId && files.length > 0) {
         const targetFile = files.find((file) => file.path === urlState.filePath)
@@ -690,14 +771,13 @@ function App() {
       return
     }
 
-    if (paperId && selectedFile) {
-      document.title = `${selectedFile.name} - arXiv ${paperId} - arXiv Source Browser`
-    } else if (paperId) {
-      document.title = `arXiv ${paperId} - arXiv Source Browser`
+    const browseTitleId = loadedArxivId || (files.length > 0 ? paperId : '')
+    if (browseTitleId) {
+      document.title = buildBrowseDocumentTitle(browseTitleId, selectedFile, paperMetadata)
     } else {
       document.title = 'arXiv Source Browser'
     }
-  }, [appMode, diffBaseId, diffFromVersion, diffToVersion, paperId, selectedDiffFilePath, selectedFile])
+  }, [appMode, diffBaseId, diffFromVersion, diffToVersion, files.length, loadedArxivId, paperId, paperMetadata, selectedDiffFilePath, selectedFile])
 
   useEffect(() => {
     if (appMode !== 'browse') {
@@ -768,6 +848,7 @@ function App() {
 
   useEffect(() => {
     setHideCommentsInViewer(false)
+    setPaperMetadataCollapsed(false)
   }, [selectedFile?.path])
 
   useEffect(() => {
@@ -823,6 +904,15 @@ function App() {
     setSelectedOutlineLine((prev) => (prev === activeOutlineLine ? prev : activeOutlineLine))
   }, [selectedFile, texOutline])
 
+  const handleViewerSourceScroll = useCallback((scrollTop: number) => {
+    if (!selectedFile || getFileType(selectedFile.name) !== 'tex') {
+      setPaperMetadataCollapsed(false)
+      return
+    }
+
+    setPaperMetadataCollapsed(scrollTop > 80)
+  }, [selectedFile])
+
   const handleToggleFileBrowser = () => {
     setFileBrowserCollapsed(!fileBrowserCollapsed)
   }
@@ -846,6 +936,9 @@ function App() {
     setSelectedFile(null)
     setZipBlob(null)
     setPaperId('')
+    setLoadedArxivId('')
+    setPaperMetadata(null)
+    setPaperMetadataCollapsed(false)
     clearDiffState()
     setInitialLoading(false)
     window.history.pushState(null, '', BASE_URL)
@@ -878,6 +971,7 @@ function App() {
     }
 
     setAppMode('diff')
+    setPaperMetadata(null)
     setInitialLoading(false)
 
     if (diffBaseId && diffFromVersion !== null && diffToVersion !== null) {
@@ -915,6 +1009,8 @@ function App() {
   }
 
   const hasMainContent = appMode === 'diff' || files.length > 0
+  const paperAuthorsLabel = paperMetadata ? formatAuthors(paperMetadata.authors) : null
+  const loadedPaperId = loadedArxivId || (files.length > 0 ? paperMetadata?.id || '' : '')
 
   return (
     <div className={`app ${hasMainContent ? 'has-files' : ''}`}>
@@ -1066,7 +1162,7 @@ function App() {
 
             <section className="about-section">
               <p>This website is maintained by <a href="https://dominik-peters.de">Dominik Peters</a> and is not affiliated with arXiv.org.</p>
-              <p>First published: June 2025. Last updated: April 2026, version 2.2.</p>
+              <p>First published: June 2025. Last updated: June 2026, version 2.4.</p>
               <p>Source code is available on <a href="https://github.com/DominikPeters/arxiv-source-browser">GitHub</a> under MIT license. The app was mostly implemented using Claude Code and Codex.</p>
             </section>
           </div>
@@ -1090,6 +1186,20 @@ function App() {
             />
           </div>
           <div className="file-viewer-container">
+            {paperMetadata?.title && (
+              <div className={`paper-metadata-bar${paperMetadataCollapsed ? ' collapsed' : ''}`}>
+                <div className="paper-metadata-main">
+                  <div className="paper-metadata-title">{paperMetadata.title}</div>
+                  {paperAuthorsLabel && <div className="paper-metadata-authors">{paperAuthorsLabel}</div>}
+                </div>
+                <div className="paper-metadata-side">
+                  {loadedPaperId && <span className="paper-metadata-id">arXiv:{loadedPaperId}</span>}
+                  {paperMetadata.primaryCategory && (
+                    <span className="paper-metadata-category">{paperMetadata.primaryCategory}</span>
+                  )}
+                </div>
+              </div>
+            )}
             {selectedFile ? (
               <Suspense fallback={<div className="no-file-selected">Loading viewer…</div>}>
                 <FileViewer
@@ -1100,6 +1210,7 @@ function App() {
                   onFileSelect={handleFileSelect}
                   onHideCommentsChange={setHideCommentsInViewer}
                   onVisibleLineChange={handleViewerVisibleLineChange}
+                  onSourceScroll={handleViewerSourceScroll}
                   scrollToLine={outlineJumpRequest}
                 />
               </Suspense>

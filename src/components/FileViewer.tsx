@@ -133,6 +133,7 @@ interface FileViewerProps {
   onFileSelect?: (file: FileEntry) => void
   onHideCommentsChange?: (hideComments: boolean) => void
   onVisibleLineChange?: (lineNumber: number) => void
+  onSourceScroll?: (scrollTop: number) => void
   scrollToLine?: { lineNumber: number; token: number } | null
 }
 
@@ -153,6 +154,7 @@ function FileViewer({
   onFileSelect,
   onHideCommentsChange,
   onVisibleLineChange,
+  onSourceScroll,
   scrollToLine = null,
 }: FileViewerProps) {
   const [content, setContent] = useState<string>('')
@@ -299,6 +301,14 @@ function FileViewer({
     lastVisibleLineRef.current = lineNumber
     onVisibleLineChange(lineNumber)
   }, [fileType, getTopVisibleLineNumber, onVisibleLineChange])
+
+  const reportSourceScroll = useCallback((editorView: EditorView) => {
+    if (!onSourceScroll || fileType !== 'tex') {
+      return
+    }
+
+    onSourceScroll(editorView.scrollDOM.scrollTop)
+  }, [fileType, onSourceScroll])
 
   const updateSelectionTokenEstimate = useCallback((editorView: EditorView) => {
     if (fileType === 'image' || fileType === 'pdf') {
@@ -475,6 +485,10 @@ function FileViewer({
       if (fileType === 'tex' && (update.viewportChanged || update.docChanged)) {
         scheduleVisibleLineReport(update.view)
       }
+
+      if (fileType === 'tex' && update.viewportChanged) {
+        reportSourceScroll(update.view)
+      }
     })
 
     if (fileType !== 'tex') {
@@ -488,7 +502,7 @@ function FileViewer({
       }),
       updateListener,
     ]
-  }, [fileType, handleLatexLinkClick, scheduleVisibleLineReport, updateSelectionTokenEstimate])
+  }, [fileType, handleLatexLinkClick, reportSourceScroll, scheduleVisibleLineReport, updateSelectionTokenEstimate])
 
   useEffect(() => {
     onHideCommentsChange?.(hideComments)
@@ -591,6 +605,7 @@ function FileViewer({
     }
 
     const handleScroll = () => {
+      reportSourceScroll(editorView)
       scheduleVisibleLineReport(editorView)
     }
 
@@ -600,7 +615,7 @@ function FileViewer({
     return () => {
       editorView.scrollDOM.removeEventListener('scroll', handleScroll)
     }
-  }, [displayContent, fileType, onVisibleLineChange, scheduleVisibleLineReport])
+  }, [displayContent, fileType, onVisibleLineChange, reportSourceScroll, scheduleVisibleLineReport])
 
   useEffect(() => {
     if (fileType === 'image' || fileType === 'pdf') {

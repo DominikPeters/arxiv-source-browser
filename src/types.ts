@@ -12,6 +12,21 @@ export type FileType = 'tex' | 'bib' | 'image' | 'pdf' | 'text' | 'unknown'
 
 export type AppMode = 'browse' | 'diff'
 
+export interface PaperMetadata {
+  id: string
+  oaiIdentifier: string | null
+  datestamp: string | null
+  created: string | null
+  updated: string | null
+  title: string | null
+  authors: string[]
+  primaryCategory: string | null
+  categories: string[]
+  doi: string | null
+  journalRef: string | null
+  license: string | null
+}
+
 export interface DiffVersion {
   version: number
   id: string

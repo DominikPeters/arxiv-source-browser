@@ -543,6 +543,10 @@
   align-items: stretch;
 }
 
+.arxiv-url-input-wrapper.expanded {
+  z-index: 1300;
+}
+
 .arxiv-url-input {
   flex: 1;
   padding: 0.375rem 1rem;
@@ -592,6 +596,80 @@
 
 .arxiv-url-input::placeholder {
   color: var(--text-muted);
+}
+
+.arxiv-suggestions {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-lg);
+  max-height: min(420px, 70vh);
+  overflow: auto;
+}
+
+.arxiv-suggestion {
+  display: grid;
+  justify-content: stretch;
+  justify-items: start;
+  gap: 0.22rem;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  padding: 0.48rem 0.58rem;
+  cursor: pointer;
+}
+
+.arxiv-suggestion:hover,
+.arxiv-suggestion.selected {
+  background: var(--bg-secondary);
+}
+
+.arxiv-suggestion-title {
+  width: 100%;
+  text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.arxiv-suggestion-meta {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.arxiv-suggestion-id {
+  flex: 0 0 auto;
+  font-family: ui-monospace, 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  color: #9a3412;
+  font-weight: 700;
+}
+
+.arxiv-suggestion-authors {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .submit-button {
@@ -971,6 +1049,79 @@
   background: var(--bg-primary);
   min-width: 0;
   min-height: 0;
+}
+
+.paper-metadata-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+  max-height: 72px;
+  padding: 0.56rem 0.75rem;
+  border-bottom: 1px solid var(--border-primary);
+  background: linear-gradient(180deg, #fff, #faf9f7);
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: max-height 0.16s ease, padding-top 0.16s ease, padding-bottom 0.16s ease, opacity 0.12s ease;
+}
+
+.paper-metadata-bar.collapsed {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-width: 0;
+  opacity: 0;
+}
+
+.paper-metadata-main {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.paper-metadata-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.paper-metadata-authors {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.paper-metadata-side {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
+.paper-metadata-id,
+.paper-metadata-category {
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  padding: 0.18rem 0.38rem;
+  white-space: nowrap;
+}
+
+.paper-metadata-id {
+  font-family: ui-monospace, 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  color: #9a3412;
+  font-weight: 700;
 }
 
 .file-viewer {
@@ -2047,6 +2198,28 @@
 
   .submit-button {
     padding: 0.75rem 1rem;
+  }
+
+  .arxiv-suggestions {
+    max-height: 55vh;
+  }
+
+  .arxiv-suggestion-title {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .paper-metadata-bar {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .paper-metadata-side {
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .file-actions {

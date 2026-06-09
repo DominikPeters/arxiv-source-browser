@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { ExternalLink } from 'lucide-react'
+import { API_URL } from '../config'
+import type { PaperMetadata } from '../types'
 
 interface ArxivInputProps {
   onSubmit: (url: string) => void
@@ -11,40 +13,136 @@ interface ArxivInputProps {
 
 export default function ArxivInput({ onSubmit, loading, value, onChange, loadedArxivId }: ArxivInputProps) {
   const hasInitialized = useRef(false)
+  const [suggestions, setSuggestions] = useState<PaperMetadata[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
+  const [isSearching, setIsSearching] = useState(false)
+  const inputValue = value || ''
 
   useEffect(() => {
     if (!hasInitialized.current) {
       const savedUrl = localStorage.getItem('arxiv-last-url')
-      if (savedUrl && !value) {
+      if (savedUrl && !inputValue) {
         onChange(savedUrl)
       }
       hasInitialized.current = true
     }
-  }, [value, onChange])
+  }, [inputValue, onChange])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    const query = inputValue.trim()
+    if (query.length < 2 || loading) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      setIsSearching(false)
+      return
+    }
+
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(async () => {
+      setIsSearching(true)
+      try {
+        const response = await fetch(`${API_URL}?action=search&q=${encodeURIComponent(query)}&limit=8`, {
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error('Search request failed')
+        }
+
+        const payload = await response.json() as { ok?: boolean; results?: PaperMetadata[] }
+        if (payload.ok && Array.isArray(payload.results)) {
+          setSuggestions(payload.results)
+          setSelectedSuggestionIndex(0)
+          setShowSuggestions(document.activeElement?.classList.contains('arxiv-url-input') ?? false)
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error('Error searching arXiv metadata:', error)
+          setSuggestions([])
+          setShowSuggestions(false)
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSearching(false)
+        }
+      }
+    }, 180)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeoutId)
+    }
+  }, [inputValue, loading])
+
+  const submitValue = (nextValue: string) => {
+    const trimmedUrl = nextValue.trim()
+    if (!trimmedUrl) {
+      return
+    }
+    localStorage.setItem('arxiv-last-url', trimmedUrl)
+    setShowSuggestions(false)
+    onChange(trimmedUrl)
+    onSubmit(trimmedUrl)
+  }
+
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    if (value?.trim()) {
-      const trimmedUrl = value.trim()
-      localStorage.setItem('arxiv-last-url', trimmedUrl)
-      onSubmit(trimmedUrl)
+    if (showSuggestions && suggestions[selectedSuggestionIndex]) {
+      submitValue(suggestions[selectedSuggestionIndex].id)
+      return
+    }
+    submitValue(inputValue)
+  }
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (!showSuggestions || suggestions.length === 0) {
+      return
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedSuggestionIndex((index) => (index + 1) % suggestions.length)
+      return
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedSuggestionIndex((index) => (index - 1 + suggestions.length) % suggestions.length)
+      return
+    }
+
+    if (e.key === 'Escape') {
+      setShowSuggestions(false)
     }
   }
 
-  const showChip = !!loadedArxivId && value === loadedArxivId
+  const showChip = !!loadedArxivId && inputValue === loadedArxivId
+  const hasSuggestions = showSuggestions && suggestions.length > 0
+  const inputExpanded = hasSuggestions || isSearching
 
   return (
     <form onSubmit={handleSubmit} className="arxiv-input">
       <div className="input-group">
-        <div className="arxiv-url-input-wrapper">
+        <div className={`arxiv-url-input-wrapper${inputExpanded ? ' expanded' : ''}`}>
           <input
             type="text"
-            value={value || ''}
-            onChange={(e) => onChange(e.target.value)}
-            onFocus={(e) => e.target.select()}
+            value={inputValue}
+            onChange={(e) => {
+              onChange(e.target.value)
+              setShowSuggestions(true)
+            }}
+            onFocus={(e) => {
+              e.target.select()
+              if (suggestions.length > 0) {
+                setShowSuggestions(true)
+              }
+            }}
+            onBlur={() => window.setTimeout(() => setShowSuggestions(false), 120)}
+            onKeyDown={handleKeyDown}
             placeholder="Enter arXiv URL or ID (e.g., https://arxiv.org/abs/1706.03762 or 1706.03762)"
             disabled={loading}
             className={`arxiv-url-input${showChip ? ' with-chip' : ''}`}
+            autoComplete="off"
           />
           {showChip && (
             <a
@@ -64,8 +162,34 @@ export default function ArxivInput({ onSubmit, loading, value, onChange, loadedA
               <ExternalLink size={11} />
             </a>
           )}
+          {hasSuggestions && (
+            <div className="arxiv-suggestions" role="listbox">
+              {suggestions.map((suggestion, index) => (
+                <button
+                  key={suggestion.id}
+                  type="button"
+                  className={`arxiv-suggestion${index === selectedSuggestionIndex ? ' selected' : ''}`}
+                  onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    submitValue(suggestion.id)
+                  }}
+                  role="option"
+                  aria-selected={index === selectedSuggestionIndex}
+                >
+                  <span className="arxiv-suggestion-title">{suggestion.title || suggestion.id}</span>
+                  <span className="arxiv-suggestion-meta">
+                    <span className="arxiv-suggestion-id">arXiv:{suggestion.id}</span>
+                    {suggestion.authors.length > 0 && (
+                      <span className="arxiv-suggestion-authors">{suggestion.authors.slice(0, 3).join(', ')}{suggestion.authors.length > 3 ? ' et al.' : ''}</span>
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <button type="submit" disabled={loading || !value?.trim()} className="submit-button">
+        <button type="submit" disabled={loading || !inputValue.trim()} className="submit-button">
           {loading ? 'Loading...' : 'Open'}
         </button>
       </div>
