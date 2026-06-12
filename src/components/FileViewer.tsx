@@ -21,8 +21,23 @@ import {
 
 let currentFiles: FileEntry[] = []
 
+function escapeRegexLiteral(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function getLineNumberAtIndex(text: string, index: number): number {
+  let lineNumber = 0
+  const end = Math.min(index, text.length)
+  for (let i = 0; i < end; i++) {
+    if (text[i] === '\n') {
+      lineNumber++
+    }
+  }
+  return lineNumber
+}
+
 async function findLabelInFiles(label: string): Promise<{ file: FileEntry; lineNumber: number } | null> {
-  const labelPattern = new RegExp(`\\\\label\\{${label.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&')}\\}`)
+  const labelPattern = new RegExp(`\\\\label\\{${escapeRegexLiteral(label)}\\}`)
 
   for (const file of currentFiles) {
     const fileName = file.name.toLowerCase()
@@ -46,6 +61,83 @@ async function findLabelInFiles(label: string): Promise<{ file: FileEntry; lineN
   }
 
   return null
+}
+
+async function findBibEntryInFiles(citationKey: string): Promise<{ file: FileEntry; lineNumber: number } | null> {
+  const entryPattern = new RegExp(`@\\s*[^\\s{(]+\\s*[({]\\s*${escapeRegexLiteral(citationKey)}\\s*,`)
+
+  for (const file of currentFiles) {
+    const fileName = file.name.toLowerCase()
+    if (!fileName.endsWith('.bib')) {
+      continue
+    }
+
+    try {
+      const content = file.content !== null ? file.content : await file.zipFile.async('text')
+      const lines = content.split('\n')
+
+      for (let i = 0; i < lines.length; i++) {
+        const visibleLine = stripLatexComments(lines[i])
+        if (visibleLine && entryPattern.test(visibleLine)) {
+          return { file, lineNumber: i }
+        }
+      }
+
+      const match = entryPattern.exec(content)
+      if (match) {
+        return { file, lineNumber: getLineNumberAtIndex(content, match.index) }
+      }
+    } catch (error) {
+      console.error(`Error searching file ${file.name}:`, error)
+    }
+  }
+
+  return null
+}
+
+async function findBibitemInFiles(
+  citationKey: string,
+  fileMatcher: (fileName: string) => boolean
+): Promise<{ file: FileEntry; lineNumber: number } | null> {
+  const bibitemPattern = new RegExp(`\\\\bibitem\\b(?:\\s*\\[[^\\]\\n]*\\])?\\s*\\{\\s*${escapeRegexLiteral(citationKey)}\\s*\\}`)
+
+  for (const file of currentFiles) {
+    const fileName = file.name.toLowerCase()
+    if (!fileMatcher(fileName)) {
+      continue
+    }
+
+    try {
+      const content = file.content !== null ? file.content : await file.zipFile.async('text')
+      const lines = content.split('\n')
+
+      for (let i = 0; i < lines.length; i++) {
+        const visibleLine = stripLatexComments(lines[i])
+        if (visibleLine && bibitemPattern.test(visibleLine)) {
+          return { file, lineNumber: i }
+        }
+      }
+
+      const match = bibitemPattern.exec(content)
+      if (match) {
+        return { file, lineNumber: getLineNumberAtIndex(content, match.index) }
+      }
+    } catch (error) {
+      console.error(`Error searching file ${file.name}:`, error)
+    }
+  }
+
+  return null
+}
+
+async function findCitationInFiles(citationKey: string): Promise<{ file: FileEntry; lineNumber: number } | null> {
+  return (
+    await findBibEntryInFiles(citationKey)
+  ) ?? (
+    await findBibitemInFiles(citationKey, (fileName) => fileName.endsWith('.bbl'))
+  ) ?? (
+    await findBibitemInFiles(citationKey, (fileName) => fileName.endsWith('.tex') || fileName.endsWith('.latex'))
+  )
 }
 
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.pdf', '.eps', '.svg', '.gif']
@@ -470,6 +562,37 @@ function FileViewer({
         } catch (error) {
           console.error('Error searching for label:', error)
           onError?.(`Error searching for label '${link.payload}'`)
+        }
+      }
+
+      if (link.kind === 'cite') {
+        try {
+          const result = await findCitationInFiles(link.payload)
+          if (!result) {
+            onError?.(`Citation '${link.payload}' not found`)
+            return
+          }
+
+          onFileSelect(result.file)
+
+          const targetLineNumber = result.lineNumber + 1
+          let retries = 0
+          const maxRetries = 2
+          const attemptScroll = () => {
+            if (scrollToLineNumber(targetLineNumber)) {
+              return
+            }
+
+            if (retries < maxRetries) {
+              retries++
+              window.setTimeout(attemptScroll, 100)
+            }
+          }
+
+          window.setTimeout(attemptScroll, 100)
+        } catch (error) {
+          console.error('Error searching for citation:', error)
+          onError?.(`Error searching for citation '${link.payload}'`)
         }
       }
     },

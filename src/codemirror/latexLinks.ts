@@ -2,7 +2,7 @@ import { RangeSetBuilder, StateField, type Extension, type Text } from '@codemir
 import { Decoration, EditorView, type DecorationSet } from '@codemirror/view'
 import type { CodeViewerMode } from './language'
 
-export type LatexLinkKind = 'input' | 'graphics' | 'ref'
+export type LatexLinkKind = 'input' | 'graphics' | 'ref' | 'cite'
 
 export interface LatexLinkSpan {
   from: number
@@ -14,6 +14,7 @@ export interface LatexLinkSpan {
 const INPUT_PATTERN = /\\input\b\s*\{([^{}\n]+)\}/g
 const GRAPHICS_PATTERN = /\\includegraphics\b(?:\s*\[[^\]\n]*\])?\s*\{([^{}\n]+)\}/g
 const REF_PATTERN = /\\(?:Cref|cref|eqref|pageref|autoref|ref)\b\s*\{([^{}\n]+)\}/g
+const CITE_PATTERN = /\\([A-Za-z]*[Cc]ite[A-Za-z]*)\*?\s*(?:\[[^\]\n]*\]\s*){0,2}\{([^{}\n]+)\}/g
 
 function maskLatexCommentsPreservingLength(text: string): string {
   let output = ''
@@ -75,6 +76,36 @@ function collectRegexSpans(
   }
 }
 
+function collectCitationSpans(spans: LatexLinkSpan[], text: string) {
+  CITE_PATTERN.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = CITE_PATTERN.exec(text)) !== null) {
+    const payload = match[2] || ''
+    if (!payload.trim()) {
+      continue
+    }
+
+    const payloadStart = match.index + match[0].lastIndexOf('{') + 1
+    const keyPattern = /[^,]+/g
+    let keyMatch: RegExpExecArray | null
+    while ((keyMatch = keyPattern.exec(payload)) !== null) {
+      const rawKey = keyMatch[0]
+      const leadingWhitespaceLength = rawKey.length - rawKey.trimStart().length
+      const key = rawKey.trim()
+      if (!key || key === '*') {
+        continue
+      }
+
+      spans.push({
+        from: payloadStart + keyMatch.index + leadingWhitespaceLength,
+        to: payloadStart + keyMatch.index + leadingWhitespaceLength + key.length,
+        kind: 'cite',
+        payload: key,
+      })
+    }
+  }
+}
+
 function dedupeOverlappingSpans(spans: LatexLinkSpan[]): LatexLinkSpan[] {
   if (spans.length <= 1) {
     return spans
@@ -103,6 +134,7 @@ export function collectLatexLinkSpans(text: string, mode: CodeViewerMode): Latex
   collectRegexSpans(spans, maskedText, INPUT_PATTERN, 'input')
   collectRegexSpans(spans, maskedText, GRAPHICS_PATTERN, 'graphics')
   collectRegexSpans(spans, maskedText, REF_PATTERN, 'ref')
+  collectCitationSpans(spans, maskedText)
 
   return dedupeOverlappingSpans(spans)
 }
@@ -114,6 +146,7 @@ function getLinkClassName(kind: LatexLinkKind): string {
     case 'graphics':
       return 'latex-graphics-link'
     case 'ref':
+    case 'cite':
     default:
       return 'latex-ref-link'
   }
@@ -126,6 +159,7 @@ function getTitleForSpan(span: LatexLinkSpan): string {
     case 'graphics':
       return `Click to open: ${span.payload}`
     case 'ref':
+    case 'cite':
     default:
       return `Click to go to: ${span.payload}`
   }
@@ -193,7 +227,7 @@ export function createLatexLinkClickExtension(onLinkClick: (link: LatexLinkSpan)
         return false
       }
 
-      if (kind !== 'input' && kind !== 'graphics' && kind !== 'ref') {
+      if (kind !== 'input' && kind !== 'graphics' && kind !== 'ref' && kind !== 'cite') {
         return false
       }
 
