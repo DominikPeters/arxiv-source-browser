@@ -8,6 +8,9 @@ import DiffStatusIcon from './DiffStatusIcon'
 export interface DiffModeEntry extends DiffFileListItem {
   oldFile: FileEntry | null
   newFile: FileEntry | null
+  oldPath?: string
+  newPath?: string
+  renameSimilarity?: number
 }
 
 interface DiffModeProps {
@@ -119,6 +122,9 @@ export default function DiffMode({
             {selectedEntry ? (
               <DiffViewer
                 filePath={selectedEntry.path}
+                oldPath={selectedEntry.oldPath}
+                newPath={selectedEntry.newPath}
+                renameSimilarity={selectedEntry.renameSimilarity}
                 status={selectedEntry.status}
                 oldFile={selectedEntry.oldFile}
                 newFile={selectedEntry.newFile}

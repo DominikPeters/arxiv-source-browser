@@ -6,6 +6,9 @@ import DiffStatusIcon from './DiffStatusIcon'
 export interface DiffFileListItem {
   path: string
   status: DiffFileStatus
+  oldPath?: string
+  newPath?: string
+  renameSimilarity?: number
 }
 
 interface DiffFileListProps {
@@ -48,6 +51,16 @@ function statusLabel(status: DiffFileStatus): string {
     default:
       return status
   }
+}
+
+function fileLabel(file: DiffFileListItem): string {
+  if (file.oldPath && file.newPath && file.oldPath !== file.newPath) {
+    const oldName = file.oldPath.split('/').pop() || file.oldPath
+    const newName = file.newPath.split('/').pop() || file.newPath
+    return `${oldName} -> ${newName}`
+  }
+
+  return file.path.split('/').pop() || file.path
 }
 
 function emptyCounts(): DiffCounts {
@@ -106,7 +119,7 @@ export default function DiffFileList({ files, selectedFilePath, onSelectFile }: 
 
       currentLevel.push({
         id: file.path,
-        name: parts[parts.length - 1],
+        name: fileLabel(file),
         type: 'file',
         path: file.path,
         status: file.status,

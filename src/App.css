@@ -1867,6 +1867,26 @@
   gap: 0.5rem;
 }
 
+.diff-rename-label {
+  border: 1px solid #bae6fd;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #0369a1;
+  padding: 0.12rem 0.42rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.diff-rename-note {
+  border-bottom: 1px solid var(--border-primary);
+  background: #f8fafc;
+  color: var(--text-secondary);
+  padding: 0.36rem 0.62rem;
+  font-family: ui-monospace, 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: 0.72rem;
+}
+
 .diff-line-stats {
   display: inline-flex;
   align-items: center;

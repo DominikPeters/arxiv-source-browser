@@ -257,6 +257,194 @@ async function fileContentsEqual(oldFile: FileEntry, newFile: FileEntry): Promis
   return true
 }
 
+const RENAME_SIMILARITY_THRESHOLD = 0.48
+const RENAME_AMBIGUITY_MARGIN = 0.08
+const RENAME_MIN_TOKENS = 24
+
+function getPathExtension(path: string): string {
+  const parts = path.toLowerCase().split('.')
+  return parts.length > 1 ? parts[parts.length - 1] : ''
+}
+
+function isTextRenameCandidate(file: FileEntry): boolean {
+  const fileType = getFileType(file.path)
+  return fileType === 'tex' || fileType === 'bib' || fileType === 'text'
+}
+
+function stripLatexLineComment(line: string): string {
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] !== '%') {
+      continue
+    }
+
+    let slashCount = 0
+    for (let j = i - 1; j >= 0 && line[j] === '\\'; j--) {
+      slashCount++
+    }
+
+    if (slashCount % 2 === 0) {
+      return line.slice(0, i)
+    }
+  }
+
+  return line
+}
+
+function normalizeForRenameSimilarity(content: string): string {
+  return content
+    .split(/\r?\n/)
+    .map(stripLatexLineComment)
+    .join('\n')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function tokenizeForRenameSimilarity(normalized: string): string[] {
+  return normalized.match(/\\[a-z]+|[a-z0-9_]+/g) ?? []
+}
+
+function buildShingles(tokens: string[], size: number): Set<string> {
+  if (tokens.length === 0) {
+    return new Set()
+  }
+
+  if (tokens.length <= size) {
+    return new Set(tokens)
+  }
+
+  const shingles = new Set<string>()
+  for (let i = 0; i <= tokens.length - size; i++) {
+    shingles.add(tokens.slice(i, i + size).join(' '))
+  }
+  return shingles
+}
+
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) {
+    return 0
+  }
+
+  let intersection = 0
+  for (const value of a) {
+    if (b.has(value)) {
+      intersection++
+    }
+  }
+
+  return intersection / (a.size + b.size - intersection)
+}
+
+interface RenameSimilarityProfile {
+  file: FileEntry
+  extension: string
+  normalized: string
+  tokenCount: number
+  tokens: Set<string>
+  shingles: Set<string>
+}
+
+async function buildRenameSimilarityProfile(file: FileEntry): Promise<RenameSimilarityProfile | null> {
+  try {
+    const content = file.content ?? await file.zipFile.async('text')
+    file.content = content
+    const normalized = normalizeForRenameSimilarity(content)
+    const tokens = tokenizeForRenameSimilarity(normalized)
+
+    if (tokens.length < RENAME_MIN_TOKENS) {
+      return null
+    }
+
+    return {
+      file,
+      extension: getPathExtension(file.path),
+      normalized,
+      tokenCount: tokens.length,
+      tokens: new Set(tokens),
+      shingles: buildShingles(tokens, 5),
+    }
+  } catch (error) {
+    console.error('Error reading file while detecting renamed diff entry:', error)
+    return null
+  }
+}
+
+function scoreRenameSimilarity(oldProfile: RenameSimilarityProfile, newProfile: RenameSimilarityProfile): number {
+  if (oldProfile.extension !== newProfile.extension) {
+    return 0
+  }
+
+  if (oldProfile.normalized === newProfile.normalized) {
+    return 1
+  }
+
+  const tokenRatio = Math.min(oldProfile.tokenCount, newProfile.tokenCount) / Math.max(oldProfile.tokenCount, newProfile.tokenCount)
+  if (tokenRatio < 0.35) {
+    return 0
+  }
+
+  const tokenScore = jaccardSimilarity(oldProfile.tokens, newProfile.tokens)
+  const shingleScore = jaccardSimilarity(oldProfile.shingles, newProfile.shingles)
+  return (tokenScore * 0.35 + shingleScore * 0.65) * tokenRatio
+}
+
+async function findRenamedFilePairs(
+  removedFiles: FileEntry[],
+  addedFiles: FileEntry[]
+): Promise<Array<{ oldFile: FileEntry; newFile: FileEntry; score: number }>> {
+  const [oldProfiles, newProfiles] = await Promise.all([
+    Promise.all(removedFiles.filter(isTextRenameCandidate).map(buildRenameSimilarityProfile)),
+    Promise.all(addedFiles.filter(isTextRenameCandidate).map(buildRenameSimilarityProfile)),
+  ])
+
+  const oldCandidates = oldProfiles.filter((profile): profile is RenameSimilarityProfile => profile !== null)
+  const newCandidates = newProfiles.filter((profile): profile is RenameSimilarityProfile => profile !== null)
+
+  const candidates: Array<{ oldFile: FileEntry; newFile: FileEntry; score: number; ambiguous: boolean }> = []
+
+  for (const oldProfile of oldCandidates) {
+    const scored = newCandidates
+      .map((newProfile) => ({
+        oldFile: oldProfile.file,
+        newFile: newProfile.file,
+        score: scoreRenameSimilarity(oldProfile, newProfile),
+      }))
+      .filter((candidate) => candidate.score >= RENAME_SIMILARITY_THRESHOLD)
+      .sort((a, b) => b.score - a.score)
+
+    if (scored.length === 0) {
+      continue
+    }
+
+    const best = scored[0]
+    const nextBest = scored[1]
+    candidates.push({
+      ...best,
+      ambiguous: Boolean(nextBest && best.score - nextBest.score < RENAME_AMBIGUITY_MARGIN),
+    })
+  }
+
+  const usedOldPaths = new Set<string>()
+  const usedNewPaths = new Set<string>()
+  const pairs: Array<{ oldFile: FileEntry; newFile: FileEntry; score: number }> = []
+
+  for (const candidate of candidates.sort((a, b) => b.score - a.score)) {
+    if (candidate.ambiguous || usedOldPaths.has(candidate.oldFile.path) || usedNewPaths.has(candidate.newFile.path)) {
+      continue
+    }
+
+    usedOldPaths.add(candidate.oldFile.path)
+    usedNewPaths.add(candidate.newFile.path)
+    pairs.push({
+      oldFile: candidate.oldFile,
+      newFile: candidate.newFile,
+      score: candidate.score,
+    })
+  }
+
+  return pairs
+}
+
 async function buildDiffEntries(oldFiles: FileEntry[], newFiles: FileEntry[]): Promise<DiffModeEntry[]> {
   const oldMap = new Map(oldFiles.map((file) => [file.path, file]))
   const newMap = new Map(newFiles.map((file) => [file.path, file]))
@@ -264,18 +452,20 @@ async function buildDiffEntries(oldFiles: FileEntry[], newFiles: FileEntry[]): P
 
   const sortedPaths = Array.from(paths).sort((a, b) => a.localeCompare(b))
   const entries: DiffModeEntry[] = []
+  const removedFiles: FileEntry[] = []
+  const addedFiles: FileEntry[] = []
 
   for (const path of sortedPaths) {
     const oldFile = oldMap.get(path) ?? null
     const newFile = newMap.get(path) ?? null
 
     if (!oldFile && newFile) {
-      entries.push({ path, status: 'added', oldFile: null, newFile })
+      addedFiles.push(newFile)
       continue
     }
 
     if (oldFile && !newFile) {
-      entries.push({ path, status: 'removed', oldFile, newFile: null })
+      removedFiles.push(oldFile)
       continue
     }
 
@@ -292,7 +482,36 @@ async function buildDiffEntries(oldFiles: FileEntry[], newFiles: FileEntry[]): P
     })
   }
 
-  return entries
+  const renamedPairs = await findRenamedFilePairs(removedFiles, addedFiles)
+  const renamedOldPaths = new Set(renamedPairs.map((pair) => pair.oldFile.path))
+  const renamedNewPaths = new Set(renamedPairs.map((pair) => pair.newFile.path))
+
+  for (const pair of renamedPairs) {
+    const isEqual = await fileContentsEqual(pair.oldFile, pair.newFile)
+    entries.push({
+      path: pair.newFile.path,
+      oldPath: pair.oldFile.path,
+      newPath: pair.newFile.path,
+      status: isEqual ? 'unchanged' : 'modified',
+      oldFile: pair.oldFile,
+      newFile: pair.newFile,
+      renameSimilarity: pair.score,
+    })
+  }
+
+  for (const oldFile of removedFiles) {
+    if (!renamedOldPaths.has(oldFile.path)) {
+      entries.push({ path: oldFile.path, oldPath: oldFile.path, status: 'removed', oldFile, newFile: null })
+    }
+  }
+
+  for (const newFile of addedFiles) {
+    if (!renamedNewPaths.has(newFile.path)) {
+      entries.push({ path: newFile.path, newPath: newFile.path, status: 'added', oldFile: null, newFile })
+    }
+  }
+
+  return entries.sort((a, b) => a.path.localeCompare(b.path))
 }
 
 async function findMainTexDiffPath(entries: DiffModeEntry[]): Promise<string | null> {
@@ -323,6 +542,10 @@ async function findMainTexDiffPath(entries: DiffModeEntry[]): Promise<string | n
   }
 
   return texCandidates[0].path
+}
+
+function diffEntryMatchesPath(entry: DiffModeEntry, path: string): boolean {
+  return entry.path === path || entry.oldPath === path || entry.newPath === path
 }
 
 function selectPreferredDiffPair(
@@ -509,11 +732,11 @@ function App() {
       setDiffFromVersion(fromVersion)
       setDiffToVersion(toVersion)
 
-      const hasPreferredPath = preferredFilePath ? entries.some((entry) => entry.path === preferredFilePath) : false
+      const preferredEntry = preferredFilePath ? entries.find((entry) => diffEntryMatchesPath(entry, preferredFilePath)) : null
       const mainTexPath = await findMainTexDiffPath(entries)
       const firstChanged = entries.find((entry) => entry.status !== 'unchanged')
-      const nextSelectedPath = hasPreferredPath
-        ? preferredFilePath!
+      const nextSelectedPath = preferredEntry
+        ? preferredEntry.path
         : mainTexPath || firstChanged?.path || entries[0]?.path || null
 
       setSelectedDiffFilePath(nextSelectedPath)
@@ -684,8 +907,12 @@ function App() {
           setPaperId(urlState.arxivId)
 
           if (alreadyLoaded) {
-            if (urlState.filePath && diffEntries.some((entry) => entry.path === urlState.filePath)) {
-              setSelectedDiffFilePath(urlState.filePath)
+            const urlEntry = urlState.filePath
+              ? diffEntries.find((entry) => diffEntryMatchesPath(entry, urlState.filePath!))
+              : null
+
+            if (urlEntry) {
+              setSelectedDiffFilePath(urlEntry.path)
             } else {
               const firstChanged = diffEntries.find((entry) => entry.status !== 'unchanged')
               setSelectedDiffFilePath(firstChanged?.path || diffEntries[0]?.path || null)
@@ -1162,7 +1389,7 @@ function App() {
 
             <section className="about-section">
               <p>This website is maintained by <a href="https://dominik-peters.de">Dominik Peters</a> and is not affiliated with arXiv.org.</p>
-              <p>First published: June 2025. Last updated: June 2026, version 2.5.</p>
+              <p>First published: June 2025. Last updated: July 2026, version 2.6.</p>
               <p>Source code is available on <a href="https://github.com/DominikPeters/arxiv-source-browser">GitHub</a> under MIT license. The app was mostly implemented using Claude Code and Codex.</p>
             </section>
           </div>

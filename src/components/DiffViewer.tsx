@@ -11,6 +11,9 @@ import DiffStatusIcon from './DiffStatusIcon'
 
 interface DiffViewerProps {
   filePath: string
+  oldPath?: string
+  newPath?: string
+  renameSimilarity?: number
   status: DiffFileStatus
   oldFile: FileEntry | null
   newFile: FileEntry | null
@@ -61,8 +64,15 @@ function statusLabel(status: DiffFileStatus): string {
 
 const diffViewStyle = { '--diff-font-size--': '12px' } as CSSProperties
 
+function RenameBadge() {
+  return <span className="diff-rename-label">Renamed</span>
+}
+
 export default function DiffViewer({
   filePath,
+  oldPath,
+  newPath,
+  renameSimilarity,
   status,
   oldFile,
   newFile,
@@ -72,6 +82,9 @@ export default function DiffViewer({
 }: DiffViewerProps) {
   const fileType = getFileType(filePath)
   const canTextDiff = isTextDiffCandidate(fileType)
+  const oldDisplayPath = oldPath ?? filePath
+  const newDisplayPath = newPath ?? filePath
+  const isRename = Boolean(oldPath && newPath && oldPath !== newPath)
 
   const [loading, setLoading] = useState(false)
   const [oldText, setOldText] = useState('')
@@ -183,9 +196,9 @@ export default function DiffViewer({
     try {
       const language = getDiffLanguage(filePath)
       const created = generateDiffFile(
-        `old/${filePath}`,
+        `old/${oldDisplayPath}`,
         oldText,
-        `new/${filePath}`,
+        `new/${newDisplayPath}`,
         newText,
         language,
         language
@@ -206,9 +219,15 @@ export default function DiffViewer({
       setDiffFile(null)
       setLineStats(null)
     }
-  }, [canTextDiff, fallbackError, filePath, loading, newText, oldText])
+  }, [canTextDiff, fallbackError, filePath, loading, newDisplayPath, newText, oldDisplayPath, oldText])
 
   const showLineStats = Boolean(lineStats && (lineStats.added > 0 || lineStats.removed > 0))
+  const renameNote = isRename ? (
+    <div className="diff-rename-note">
+      {oldDisplayPath} -&gt; {newDisplayPath}
+      {renameSimilarity !== undefined ? ` (${Math.round(renameSimilarity * 100)}% similar)` : ''}
+    </div>
+  ) : null
 
   if (loading) {
     return <div className="diff-viewer-loading">Loading diff…</div>
@@ -220,9 +239,11 @@ export default function DiffViewer({
         <div className="diff-viewer-header">
           <h3>{filePath}</h3>
           <div className="diff-status-inline-group">
+            {isRename && <RenameBadge />}
             <DiffStatusIcon status={status} className="inline" title={statusText} ariaLabel={statusText} />
           </div>
         </div>
+        {renameNote}
         <div className="diff-preview-grid">
           <div className="diff-preview-column">
             <h4>Old</h4>
@@ -243,9 +264,11 @@ export default function DiffViewer({
         <div className="diff-viewer-header">
           <h3>{filePath}</h3>
           <div className="diff-status-inline-group">
+            {isRename && <RenameBadge />}
             <DiffStatusIcon status={status} className="inline" title={statusText} ariaLabel={statusText} />
           </div>
         </div>
+        {renameNote}
         <div className="diff-preview-grid">
           <div className="diff-preview-column">
             <h4>Old</h4>
@@ -274,9 +297,11 @@ export default function DiffViewer({
         <div className="diff-viewer-header">
           <h3>{filePath}</h3>
           <div className="diff-status-inline-group">
+            {isRename && <RenameBadge />}
             <DiffStatusIcon status={status} className="inline" title={statusText} ariaLabel={statusText} />
           </div>
         </div>
+        {renameNote}
         <div className="diff-unsupported-file">
           Binary or unsupported file type. Preview is not available for this file.
         </div>
@@ -289,6 +314,7 @@ export default function DiffViewer({
       <div className="diff-viewer-header">
         <h3>{filePath}</h3>
         <div className="diff-status-inline-group">
+          {isRename && <RenameBadge />}
           <DiffStatusIcon status={status} className="inline" title={statusText} ariaLabel={statusText} />
           {showLineStats && lineStats && (
             <span className="diff-line-stats">
@@ -298,6 +324,7 @@ export default function DiffViewer({
           )}
         </div>
       </div>
+      {renameNote}
       {fallbackError && <div className="diff-warning">{fallbackError}</div>}
       {diffError && <div className="diff-warning">{diffError}</div>}
       {diffFile ? (
