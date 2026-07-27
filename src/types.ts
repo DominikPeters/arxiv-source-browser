@@ -113,6 +113,17 @@ export function parseURL(pathname: string): URLState {
     }
   }
 
+  // Bare diff landing page: /diff (no paper selected yet)
+  if (/^\/diff\/?$/.test(cleanPath)) {
+    return {
+      mode: 'diff',
+      arxivId: null,
+      fromVersion: null,
+      toVersion: null,
+      filePath: null,
+    }
+  }
+
   // Expected browse format: /abs/[arxiv-id]/[file-path]
   const match = cleanPath.match(/^\/abs\/([^/]+)(?:\/(.*))?$/)
   
@@ -142,6 +153,11 @@ export function buildDiffURL(arxivId: string, fromVersion: number, toVersion: nu
     return `${basePath}/diff/${arxivId}/${versionPath}`
   }
   return `${basePath}/diff/${arxivId}/${versionPath}/${filePath}`
+}
+
+export function buildDiffLandingURL(): string {
+  const basePath = BASE_URL === '/' ? '' : BASE_URL.replace(/\/$/, '')
+  return `${basePath}/diff`
 }
 
 // Backwards-compatible alias used throughout browse mode.

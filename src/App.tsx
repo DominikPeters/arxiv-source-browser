@@ -7,7 +7,7 @@ import Toast from './components/Toast'
 import LandingFeatureVisual from './components/LandingFeatureVisual'
 import type { DiffModeEntry } from './components/DiffMode'
 import type { AppMode, DiffVersion, FileEntry, DiffViewLayout, PaperMetadata } from './types'
-import { parseURL, buildURL, buildDiffURL, extractArxivId, getFileType, splitArxivVersion } from './types'
+import { parseURL, buildURL, buildDiffURL, buildDiffLandingURL, extractArxivId, getFileType, splitArxivVersion } from './types'
 import { BASE_URL, API_URL } from './config'
 import { Settings as SettingsIcon, Loader2, Columns2, GitCompare } from 'lucide-react'
 import { buildVisibleLineMapAfterCommentStrip } from './latexComments'
@@ -15,6 +15,7 @@ import { parseTexOutline, type TexOutlineEntry } from './texOutline'
 
 const FileViewer = lazy(() => import('./components/FileViewer'))
 const DiffMode = lazy(() => import('./components/DiffMode'))
+const DiffLanding = lazy(() => import('./components/DiffLanding'))
 
 interface ExamplePaper {
   id: string
@@ -34,6 +35,24 @@ interface RecentPaper {
 
 const RECENT_PAPERS_KEY = 'recentPapers'
 const MAX_RECENT_PAPERS = 4
+const HOME_TITLE = 'arXiv Source Browser - View the LaTeX code of arXiv papers'
+const HOME_DESCRIPTION = 'Browse and explore LaTeX source files from arXiv papers. View code with syntax highlighting, navigate file structures, and download complete source archives.'
+const DIFF_LANDING_TITLE = 'arXiv Source Browser Diff Mode - Compare paper versions'
+const DIFF_LANDING_DESCRIPTION = 'Compare versions of arXiv papers side by side and see exactly what changed in their source files.'
+
+function updateMetaTag(selector: string, content: string): void {
+  const element = document.head.querySelector<HTMLMetaElement>(selector)
+  if (element) {
+    element.content = content
+  }
+}
+
+function updateCanonicalURL(): void {
+  const canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]')
+  if (canonical) {
+    canonical.href = new URL(window.location.pathname, window.location.origin).href
+  }
+}
 
 function loadRecentPapers(): RecentPaper[] {
   try {
@@ -880,6 +899,13 @@ function App() {
       return
     }
 
+    if (urlState.mode === 'diff') {
+      // Bare /diff landing page (no paper selected yet)
+      setAppMode('diff')
+      setInitialLoading(false)
+      return
+    }
+
     if (urlState.mode === 'browse' && urlState.arxivId) {
       setAppMode('browse')
       void handleArxivSubmit(urlState.arxivId, { skipHistory: true })
@@ -925,6 +951,9 @@ function App() {
               skipHistory: true,
             })
           }
+        } else {
+          // Bare /diff landing page: drop any previously loaded diff.
+          clearDiffState()
         }
 
         return
@@ -954,6 +983,7 @@ function App() {
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
   }, [
+    clearDiffState,
     diffBaseId,
     diffEntries,
     diffFromVersion,
@@ -994,7 +1024,7 @@ function App() {
         return
       }
 
-      document.title = 'arXiv Diff Mode - arXiv Source Browser'
+      document.title = DIFF_LANDING_TITLE
       return
     }
 
@@ -1002,9 +1032,27 @@ function App() {
     if (browseTitleId) {
       document.title = buildBrowseDocumentTitle(browseTitleId, selectedFile, paperMetadata)
     } else {
-      document.title = 'arXiv Source Browser'
+      document.title = HOME_TITLE
     }
   }, [appMode, diffBaseId, diffFromVersion, diffToVersion, files.length, loadedArxivId, paperId, paperMetadata, selectedDiffFilePath, selectedFile])
+
+  // Keep link previews and canonical URLs aligned with the current SPA route.
+  useEffect(() => {
+    const hasLoadedDiff = appMode === 'diff' && diffBaseId && diffFromVersion !== null && diffToVersion !== null
+    const isDiffLanding = appMode === 'diff' && !hasLoadedDiff
+    const title = isDiffLanding ? DIFF_LANDING_TITLE : document.title
+    const description = isDiffLanding ? DIFF_LANDING_DESCRIPTION : HOME_DESCRIPTION
+
+    updateMetaTag('meta[name="description"]', description)
+    updateMetaTag('meta[property="og:title"]', title)
+    updateMetaTag('meta[property="og:description"]', description)
+    updateMetaTag('meta[name="twitter:title"]', title)
+    updateMetaTag('meta[name="twitter:description"]', description)
+
+    const canonicalURL = new URL(window.location.pathname, window.location.origin).href
+    updateMetaTag('meta[property="og:url"]', canonicalURL)
+    updateCanonicalURL()
+  }, [appMode, diffBaseId, diffFromVersion, diffToVersion, selectedDiffFilePath])
 
   useEffect(() => {
     if (appMode !== 'browse') {
@@ -1176,6 +1224,14 @@ function App() {
     void handleArxivSubmit(examplePaperId)
   }
 
+  const handleDiffExampleClick = (id: string, fromVersion: number, toVersion: number) => {
+    setPaperId(id)
+    void handleDiffSubmit(id, {
+      preferredFromVersion: fromVersion,
+      preferredToVersion: toVersion,
+    })
+  }
+
   const handleModeSwitch = (mode: AppMode) => {
     if (mode === appMode) {
       return
@@ -1203,6 +1259,8 @@ function App() {
 
     if (diffBaseId && diffFromVersion !== null && diffToVersion !== null) {
       updateDiffHistory(diffBaseId, diffFromVersion, diffToVersion, selectedDiffFilePath)
+    } else {
+      window.history.pushState(null, '', buildDiffLandingURL())
     }
   }
 
@@ -1235,7 +1293,8 @@ function App() {
     void handleArxivSubmit(url)
   }
 
-  const hasMainContent = appMode === 'diff' || files.length > 0
+  const showingDiffLanding = appMode === 'diff' && diffVersions.length === 0 && !loading
+  const hasMainContent = (appMode === 'diff' && !showingDiffLanding) || files.length > 0
   const paperAuthorsLabel = paperMetadata ? formatAuthors(paperMetadata.authors) : null
   const loadedPaperId = loadedArxivId || (files.length > 0 ? paperMetadata?.id || '' : '')
 
@@ -1359,11 +1418,16 @@ function App() {
                 <h3>Check token counts</h3>
                 <p>See how many tokens a file or selection will use before pasting it into a prompt.</p>
               </article>
-              <article className="feature-card">
+              <button
+                type="button"
+                className="feature-card feature-card-button"
+                onClick={() => handleModeSwitch('diff')}
+              >
                 <LandingFeatureVisual kind="diff" />
                 <h3>Diff between versions</h3>
                 <p>Pick any two versions of a paper and see exactly what the authors changed.</p>
-              </article>
+                <span className="feature-card-link">See how it works &rarr;</span>
+              </button>
             </section>
 
             <section className="examples-section">
@@ -1393,6 +1457,11 @@ function App() {
               <p>Source code is available on <a href="https://github.com/DominikPeters/arxiv-source-browser">GitHub</a> under MIT license. The app was mostly implemented using Claude Code and Codex.</p>
             </section>
           </div>
+        )}
+        {showingDiffLanding && (
+          <Suspense fallback={<div className="diff-loading-panel">Loading…</div>}>
+            <DiffLanding onOpenExample={handleDiffExampleClick} loading={loading} />
+          </Suspense>
         )}
       </header>
 
@@ -1450,7 +1519,7 @@ function App() {
         </div>
       )}
 
-      {appMode === 'diff' && (
+      {appMode === 'diff' && !showingDiffLanding && (
         <div className="app-content diff-app-content">
           <Suspense fallback={<div className="diff-loading-panel">Loading diff view…</div>}>
             <DiffMode

@@ -425,6 +425,90 @@
   box-shadow: var(--shadow-sm);
 }
 
+/* Clickable feature card (links to the diff landing page) */
+.feature-card-button {
+  text-align: left;
+  align-items: stretch;
+  cursor: pointer;
+  font: inherit;
+  transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.feature-card-button p {
+  flex: 1;
+}
+
+.feature-card-button:hover {
+  border-color: #cfb69d;
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.feature-card-link {
+  margin-top: 0.5rem;
+  color: #92400e;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+/* Diff landing page (bare /diff route and the diff-mode empty state) */
+.diff-landing-cta {
+  margin: 0.95rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.diff-landing-cases {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.diff-landing-case {
+  background: linear-gradient(170deg, #fff, #faf9f7);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  padding: 0.9rem 1rem 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.diff-landing-case-text h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.diff-landing-case-text p {
+  margin: 0.35rem 0 0;
+  max-width: 70ch;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.diff-landing-case-diff {
+  margin-top: 0.75rem;
+}
+
+/* The reused DiffViewer sizes to its content here, rather than filling a pane. */
+.diff-landing-case-diff .diff-viewer {
+  height: auto;
+}
+
+.diff-landing-case-diff .git-diff-view-wrapper {
+  flex: none;
+  overflow: visible;
+}
+
+.diff-example-note {
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
 .section-heading {
   display: grid;
   gap: 0.25rem;

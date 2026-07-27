@@ -24,6 +24,10 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        diff: fileURLToPath(new URL('./diff.html', import.meta.url)),
+      },
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'],

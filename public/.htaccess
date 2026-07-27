@@ -1,5 +1,8 @@
 RewriteEngine On
 
+# Serve route-specific metadata for the Diff landing page before the SPA fallback.
+RewriteRule ^diff/?$ /diff.html [L]
+
 # Handle client-side routing - redirect all requests to index.html
 # except for existing files and directories
 RewriteCond %{REQUEST_FILENAME} !-f
